@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Megaphone, Plus, Send } from "lucide-react";
 import { AdminPageHeader } from "@/components/admin/admin-shell";
@@ -9,6 +10,8 @@ import { Switch } from "@/components/ui/switch";
 import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { StatusPill } from "@/components/status-pill";
+import { usePlatformCompanies } from "@/hooks/use-companies";
+import { fetchPlatformPayments } from "@/lib/api/payments";
 import {
   AUDIT_LOGS,
   FEATURE_FLAGS,
@@ -18,7 +21,6 @@ import {
   PLATFORM_DOMAINS,
   PLATFORM_OVERVIEW,
   PLATFORM_USERS_LIST,
-  RECENT_PAYMENTS,
   SUBSCRIPTION_PLANS,
 } from "@/lib/platform-data";
 import { PLATFORM_KPIS, TICKETS, money } from "@/lib/mock-data";
@@ -99,12 +101,18 @@ export function SubscriptionsSection() {
 }
 
 export function BillingSection() {
-  const invoices = PLATFORM_COMPANIES.map((c, i) => ({
-    id: `INV-2026-${1000 + i}`,
+  const { data: companies = [] } = usePlatformCompanies();
+  const { data: payments = [] } = useQuery({
+    queryKey: ["platform", "payments"],
+    queryFn: fetchPlatformPayments,
+    staleTime: 30_000,
+  });
+  const invoices = companies.map((c, i) => ({
+    id: `INV-${c.code || i}`,
     company: c.name,
     amount: c.mrr,
-    status: c.outstanding > 0 ? "Failed" : "Paid",
-    date: "1 Mar 2026",
+    status: c.outstanding > 0 ? "Failed" : c.status === "Past due" ? "Past due" : "Paid",
+    date: c.expiryDate,
   }));
 
   return (
@@ -112,50 +120,65 @@ export function BillingSection() {
       <AdminPageHeader title="Billing" description="Invoices, payments and revenue" />
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {[
-          ["Outstanding", "K 48,000"],
-          ["Paid this month", "K 186,400"],
-          ["Renewals due", "6"],
-          ["Refunds", "K 0"],
+          ["Companies", String(companies.length)],
+          ["Payments recorded", String(payments.length)],
+          ["Past due", String(companies.filter((c) => c.status === "Past due").length)],
+          ["Suspended", String(companies.filter((c) => c.status === "Suspended" || c.status === "Paused").length)],
         ].map(([l, v]) => (
           <StatCard key={l} label={l} value={v} />
         ))}
       </div>
       <div className="overflow-hidden rounded-xl border border-border bg-card shadow-card">
         <div className="border-b border-border px-5 py-4">
-          <h2 className="text-sm font-semibold">Recent invoices</h2>
+          <h2 className="text-sm font-semibold">Companies &amp; subscription status</h2>
         </div>
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/40 hover:bg-muted/40">
-              <TableHead>Invoice</TableHead>
+              <TableHead>Ref</TableHead>
               <TableHead>Company</TableHead>
-              <TableHead>Amount</TableHead>
-              <TableHead>Date</TableHead>
+              <TableHead>Plan / MRR</TableHead>
+              <TableHead>Expiry</TableHead>
               <TableHead>Status</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {invoices.map((inv) => (
-              <TableRow key={inv.id}>
-                <TableCell className="font-medium">{inv.id}</TableCell>
-                <TableCell>{inv.company}</TableCell>
-                <TableCell>{money(inv.amount, "K")}</TableCell>
-                <TableCell className="text-muted-foreground">{inv.date}</TableCell>
-                <TableCell><StatusPill status={inv.status} /></TableCell>
+            {invoices.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={5} className="text-center text-muted-foreground">
+                  No companies registered yet
+                </TableCell>
               </TableRow>
-            ))}
+            ) : (
+              invoices.map((inv) => (
+                <TableRow key={inv.id}>
+                  <TableCell className="font-medium">{inv.id}</TableCell>
+                  <TableCell>{inv.company}</TableCell>
+                  <TableCell>{money(inv.amount, "K")}</TableCell>
+                  <TableCell className="text-muted-foreground">{inv.date}</TableCell>
+                  <TableCell><StatusPill status={inv.status} /></TableCell>
+                </TableRow>
+              ))
+            )}
           </TableBody>
         </Table>
       </div>
       <div className="rounded-xl border border-border bg-card p-5 shadow-card">
-        <h2 className="text-sm font-semibold">Recent payments</h2>
+        <h2 className="text-sm font-semibold">Recent parcel payments</h2>
         <ul className="mt-4 space-y-3">
-          {RECENT_PAYMENTS.map((p) => (
-            <li key={p.company} className="flex justify-between text-sm">
-              <span>{p.company}</span>
-              <span className="font-medium">{p.amount}</span>
-            </li>
-          ))}
+          {payments.length === 0 ? (
+            <li className="text-sm text-muted-foreground">No payments yet — they appear when reception completes checkout.</li>
+          ) : (
+            payments.map((p) => (
+              <li key={p.id} className="flex justify-between text-sm">
+                <span>
+                  {p.company}
+                  {p.tracking ? ` · ${p.tracking}` : ""} · {p.method}
+                </span>
+                <span className="font-medium">{p.amount}</span>
+              </li>
+            ))
+          )}
         </ul>
       </div>
     </div>

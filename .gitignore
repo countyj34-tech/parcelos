@@ -21,6 +21,7 @@ dist-ssr
 
 # Local screenshots / temp
 .tmp-screens/
+.netlify/
 
 # Wrangler / Cloudflare
 .wrangler/

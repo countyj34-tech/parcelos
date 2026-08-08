@@ -3,6 +3,24 @@ import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { mapDbParcelToUi, type DbParcelRow } from "@/lib/api/mappers";
 import { PARCELS, type Parcel } from "@/lib/mock-data";
 
+const PARCEL_SELECT = `
+  id,
+  tracking_number,
+  sender_name,
+  sender_phone,
+  receiver_name,
+  receiver_phone,
+  status,
+  payment_status,
+  shipping_amount_cents,
+  weight_kg,
+  declared_value_cents,
+  created_at,
+  origin:branches!parcels_origin_branch_id_fkey(name),
+  destination:branches!parcels_destination_branch_id_fkey(name),
+  category:parcel_categories(name)
+`;
+
 export type ParcelFilters = {
   status?: string;
   branch?: string;
@@ -14,30 +32,14 @@ export async function fetchParcels(filters: ParcelFilters = {}): Promise<Parcel[
   if (!isSupabaseConfigured()) return filterMockParcels(filters);
 
   const supabase = getSupabase();
-  if (!supabase) return filterMockParcels(filters);
+  if (!supabase) return [];
 
   const { data: { session } } = await supabase.auth.getSession();
-  if (!session) return filterMockParcels(filters);
+  if (!session) return [];
 
   let query = supabase
     .from("parcels")
-    .select(`
-      id,
-      tracking_number,
-      sender_name,
-      sender_phone,
-      receiver_name,
-      receiver_phone,
-      status,
-      payment_status,
-      shipping_amount_cents,
-      weight_kg,
-      declared_value_cents,
-      created_at,
-      origin:branches!parcels_origin_branch_id_fkey(name),
-      destination:branches!parcels_destination_branch_id_fkey(name),
-      category:parcel_categories(name)
-    `)
+    .select(PARCEL_SELECT)
     .eq("soft_delete", false)
     .order("created_at", { ascending: false })
     .limit(100);
@@ -50,10 +52,12 @@ export async function fetchParcels(filters: ParcelFilters = {}): Promise<Parcel[
 
   const { data, error } = await query;
 
-  if (error || !data?.length) {
-    console.warn("[fetchParcels] falling back to mock:", error?.message);
-    return filterMockParcels(filters);
+  if (error) {
+    console.warn("[fetchParcels]", error.message);
+    return [];
   }
+
+  if (!data?.length) return [];
 
   const mapped = (data as unknown as DbParcelRow[]).map(mapDbParcelToUi);
   return applyClientFilters(mapped, filters);
@@ -83,36 +87,107 @@ export async function fetchParcelByTracking(tracking: string): Promise<Parcel | 
   }
 
   const supabase = getSupabase();
-  if (!supabase) return PARCELS.find((p) => p.tracking === tracking) ?? null;
+  if (!supabase) return null;
 
   const { data, error } = await supabase
     .from("parcels")
-    .select(`
-      id,
-      tracking_number,
-      sender_name,
-      sender_phone,
-      receiver_name,
-      receiver_phone,
-      status,
-      payment_status,
-      shipping_amount_cents,
-      weight_kg,
-      declared_value_cents,
-      created_at,
-      origin:branches!parcels_origin_branch_id_fkey(name),
-      destination:branches!parcels_destination_branch_id_fkey(name),
-      category:parcel_categories(name)
-    `)
-    .eq("tracking_number", tracking)
+    .select(PARCEL_SELECT)
+    .eq("tracking_number", tracking.trim().toUpperCase())
     .eq("soft_delete", false)
     .maybeSingle();
 
-  if (error || !data) {
-    return PARCELS.find((p) => p.tracking === tracking) ?? null;
+  if (error || !data) return null;
+  return mapDbParcelToUi(data as unknown as DbParcelRow);
+}
+
+export type ReceptionSearchMode = "phone" | "reference" | "tracking";
+
+/** Reception desk lookup — real DB only when Supabase is configured. */
+export async function searchReceptionParcels(
+  mode: ReceptionSearchMode,
+  query: string,
+): Promise<Parcel[]> {
+  const q = query.trim();
+  if (!q) return [];
+
+  if (!isSupabaseConfigured()) {
+    return PARCELS.filter((p) => {
+      if (mode === "phone") return p.senderPhone.includes(q) || p.receiverPhone.includes(q);
+      return p.tracking.toLowerCase().includes(q.toLowerCase());
+    }).slice(0, 10);
   }
 
-  return mapDbParcelToUi(data as unknown as DbParcelRow);
+  const supabase = getSupabase();
+  if (!supabase) return [];
+
+  let req = supabase.from("parcels").select(PARCEL_SELECT).eq("soft_delete", false).limit(20);
+
+  if (mode === "phone") {
+    const digits = q.replace(/\s+/g, "");
+    req = req.or(`sender_phone.ilike.%${digits}%,receiver_phone.ilike.%${digits}%`);
+  } else {
+    req = req.ilike("tracking_number", `%${q.toUpperCase()}%`);
+  }
+
+  const { data, error } = await req.order("created_at", { ascending: false });
+  if (error || !data) {
+    console.warn("[searchReceptionParcels]", error?.message);
+    return [];
+  }
+  return (data as unknown as DbParcelRow[]).map(mapDbParcelToUi);
+}
+
+export type FinalizeReceptionInput = {
+  parcelId: string;
+  companyId: string;
+  feeMajor: number;
+  currencyCode?: string;
+  methodType: "cash" | "card" | "bank_transfer" | "mobile_money";
+  weightKg?: number | null;
+};
+
+/** Set fee, mark paid, move parcel to received. */
+export async function finalizeReceptionPayment(
+  input: FinalizeReceptionInput,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!isSupabaseConfigured()) {
+    return { ok: true };
+  }
+
+  const supabase = getSupabase();
+  if (!supabase) return { ok: false, error: "Supabase not available" };
+
+  const cents = Math.round(input.feeMajor * 100);
+
+  const { error: parcelError } = await supabase
+    .from("parcels")
+    .update({
+      shipping_amount_cents: cents,
+      payment_status: "paid",
+      status: "received",
+      weight_kg: input.weightKg ?? undefined,
+      received_at: new Date().toISOString(),
+    })
+    .eq("id", input.parcelId);
+
+  if (parcelError) return { ok: false, error: parcelError.message };
+
+  const { error: payError } = await supabase.from("payments").insert({
+    company_id: input.companyId,
+    parcel_id: input.parcelId,
+    method_type: input.methodType,
+    amount_cents: cents,
+    currency_code: input.currencyCode ?? "ZMW",
+    status: "completed",
+    reference: `RCP-${Date.now()}`,
+  });
+
+  if (payError) {
+    console.warn("[finalizeReceptionPayment] payment row:", payError.message);
+    // Parcel already updated — still treat as success for counter flow
+  }
+
+  return { ok: true };
 }
 
 export async function fetchParcelTrackingEvents(tracking: string) {

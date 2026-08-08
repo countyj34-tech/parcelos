@@ -48,6 +48,7 @@ export type DbParcelRow = {
 
 export function mapDbParcelToUi(row: DbParcelRow): Parcel {
   return {
+    id: row.id,
     tracking: row.tracking_number,
     sender: row.sender_name,
     senderPhone: row.sender_phone,

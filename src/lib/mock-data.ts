@@ -18,6 +18,7 @@ export const PARCEL_FLOW: ParcelStatus[] = [
 ];
 
 export type Parcel = {
+  id?: string;
   tracking: string;
   sender: string;
   senderPhone: string;
@@ -678,8 +679,7 @@ export const NOTIFICATIONS = [
   { title: "Outstanding parcels", body: "14 parcels have been uncollected for over 7 days.", when: "Today, 07:00", kind: "warning" },
 ];
 
-export const money = (n: number, currency = "ZMW") =>
-  `${currency} ${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+export { money } from "@/lib/money";
 
 export const DASHBOARD_STATS = {
   todayParcels: 412,

@@ -48,8 +48,8 @@ function DashboardHome() {
         />
         <div className="grid gap-3 sm:grid-cols-2">
           {[
-            { label: "Search customer", to: "/app/customers", icon: Search },
-            { label: "Register walk-in", to: "/app/reception", icon: UserPlus },
+            { label: "Search customer", to: "/app/reception", icon: Search },
+            { label: "Register walk-in", to: "/app/reception/register", icon: UserPlus },
             { label: "Receive payment", to: "/app/reception", icon: Banknote },
             { label: "Print labels", to: "/app/reception", icon: Printer },
           ].map((a) => (

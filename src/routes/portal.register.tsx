@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowLeft,
@@ -43,6 +43,9 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/portal/register")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    from: search.from === "reception" ? ("reception" as const) : undefined,
+  }),
   head: () => ({
     meta: [{ title: "Send a parcel" }, { name: "description", content: "Register your parcel online" }],
   }),
@@ -144,8 +147,11 @@ function PortalPage({
 
 function RegisterParcel() {
   const { tenant } = useTenant();
-  const [mode, setMode] = useState<Mode>("choose");
-  const [checkoutAs, setCheckoutAs] = useState<CheckoutAs>(null);
+  const { from } = Route.useSearch();
+  const navigate = useNavigate();
+  const fromReception = from === "reception";
+  const [mode, setMode] = useState<Mode>(fromReception ? "wizard" : "choose");
+  const [checkoutAs, setCheckoutAs] = useState<CheckoutAs>(fromReception ? "guest" : null);
   const [step, setStep] = useState(0);
   const [form, setForm] = useState(empty);
   const [attempted, setAttempted] = useState(false);
@@ -263,7 +269,7 @@ function RegisterParcel() {
           <div className="mx-auto flex w-full flex-col gap-3 md:gap-5">
             <div className="text-center">
               <Link
-                to="/portal"
+                to={fromReception ? "/app/reception" : "/portal"}
                 className="inline-flex items-center gap-1 text-xs font-medium text-white/80 hover:text-white md:text-sm"
               >
                 <ArrowLeft className="h-3.5 w-3.5" /> Back
@@ -415,7 +421,7 @@ function RegisterParcel() {
                 <Link to="/portal/track">Track parcel</Link>
               </Button>
               <Button asChild variant="outline" className="h-11 flex-1 rounded-xl sm:h-12">
-                <Link to="/portal">Done</Link>
+                <Link to={fromReception ? "/app/reception" : "/portal"}>Done</Link>
               </Button>
             </div>
           </div>
@@ -430,7 +436,13 @@ function RegisterParcel() {
         <div>
           <button
             type="button"
-            onClick={() => setMode("choose")}
+            onClick={() => {
+              if (fromReception) {
+                void navigate({ to: "/app/reception" });
+                return;
+              }
+              setMode("choose");
+            }}
             className="group inline-flex items-center gap-1 text-xs font-medium text-white/75 transition-colors hover:text-white md:text-sm"
           >
             <ArrowLeft className="h-3.5 w-3.5 transition-transform group-hover:-translate-x-0.5" /> Back

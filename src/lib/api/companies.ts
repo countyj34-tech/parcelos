@@ -38,7 +38,7 @@ export async function fetchPlatformCompanies() {
   if (!supabase) return getPlatformCompanies();
 
   const { data: { session } } = await supabase.auth.getSession();
-  if (!session) return getPlatformCompanies();
+  if (!session) return [];
 
   const { data, error } = await supabase
     .from("companies")
@@ -60,10 +60,12 @@ export async function fetchPlatformCompanies() {
     .eq("soft_delete", false)
     .order("created_at", { ascending: false });
 
-  if (error || !data?.length) {
-    console.warn("[fetchPlatformCompanies] fallback:", error?.message);
-    return getPlatformCompanies();
+  if (error) {
+    console.warn("[fetchPlatformCompanies]", error.message);
+    return [];
   }
+
+  if (!data?.length) return [];
 
   return applyLifecycleOverrides((data as DbCompanyRow[]).map(mapDbCompanyToPlatform));
 }

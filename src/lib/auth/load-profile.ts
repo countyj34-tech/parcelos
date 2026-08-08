@@ -14,6 +14,7 @@ export type AuthProfile = {
   roleCode: string | null;
   companyId: string | null;
   companyName: string;
+  companySlug: string | null;
   branch: string;
   isPlatformOwner: boolean;
   isCustomer: boolean;
@@ -65,6 +66,7 @@ export async function loadAuthProfile(session: Session): Promise<AuthProfile> {
       roleCode,
       companyId: null,
       companyName: "ParcelOS Platform",
+      companySlug: null,
       branch: "Platform",
       isPlatformOwner: true,
       isCustomer: false,
@@ -73,14 +75,14 @@ export async function loadAuthProfile(session: Session): Promise<AuthProfile> {
 
   const { data: profile } = await supabase
     .from("users")
-    .select("full_name, company_id, user_type, companies(name)")
+    .select("full_name, company_id, user_type, companies(name, slug)")
     .eq("id", userId)
     .eq("is_active", true)
     .maybeSingle();
 
   if (profile?.user_type === "customer") {
     const fullName = profile.full_name ?? email;
-    const companyRow = profile.companies as { name: string } | null;
+    const companyRow = profile.companies as { name: string; slug: string } | null;
     return {
       userId,
       email,
@@ -90,6 +92,7 @@ export async function loadAuthProfile(session: Session): Promise<AuthProfile> {
       roleCode: "customer",
       companyId: profile.company_id,
       companyName: companyRow?.name ?? DEMO_COMPANY,
+      companySlug: companyRow?.slug ?? null,
       branch: "Customer",
       isPlatformOwner: false,
       isCustomer: true,
@@ -102,7 +105,7 @@ export async function loadAuthProfile(session: Session): Promise<AuthProfile> {
       id,
       company_id,
       roles(code),
-      companies(name),
+      companies(name, slug),
       staff_branch_assignments(
         is_primary,
         branches(name)
@@ -115,7 +118,7 @@ export async function loadAuthProfile(session: Session): Promise<AuthProfile> {
   if (staff) {
     const roleRow = staff.roles as { code: string } | null;
     const roleCode = roleRow?.code ?? "company_admin";
-    const companyRow = staff.companies as { name: string } | null;
+    const companyRow = staff.companies as { name: string; slug: string } | null;
     const assignments = staff.staff_branch_assignments as Array<{
       is_primary: boolean;
       branches: { name: string } | null;
@@ -135,6 +138,7 @@ export async function loadAuthProfile(session: Session): Promise<AuthProfile> {
       roleCode,
       companyId: staff.company_id,
       companyName: companyRow?.name ?? DEMO_COMPANY,
+      companySlug: companyRow?.slug ?? null,
       branch: roleCode === "company_admin" ? "All Branches" : primaryBranch,
       isPlatformOwner: false,
       isCustomer: false,
@@ -151,6 +155,7 @@ export async function loadAuthProfile(session: Session): Promise<AuthProfile> {
     roleCode: "company_admin",
     companyId: profile?.company_id ?? null,
     companyName: DEMO_COMPANY,
+    companySlug: null,
     branch: fallback.branch,
     isPlatformOwner: false,
     isCustomer: false,
@@ -168,6 +173,7 @@ export function demoProfile(role: UserRole): AuthProfile {
     roleCode: null,
     companyId: null,
     companyName: DEMO_COMPANY,
+    companySlug: "swift-logistics",
     branch: demo.branch,
     isPlatformOwner: role === "Super Admin",
     isCustomer: false,

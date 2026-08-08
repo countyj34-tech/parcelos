@@ -39,8 +39,8 @@ const ALL_WORKSPACE = WORKSPACE_NAV.map((n) => n.to);
 /** Allowed /app routes per role (plus SHARED_STAFF_PATHS). */
 const ROLE_PATHS: Record<UserRole, readonly string[]> = {
   "Super Admin": ALL_WORKSPACE,
-  "Company Admin": [...ALL_WORKSPACE, "/app/subscription"],
-  "Branch Manager": ALL_WORKSPACE,
+  "Company Admin": [...ALL_WORKSPACE, "/app/subscription", "/app/onboarding"],
+  "Branch Manager": [...ALL_WORKSPACE, "/app/onboarding"],
   Receptionist: ["/app", "/app/reception", "/app/parcels", "/app/customers"],
   Dispatcher: ["/app/dispatch", "/app/tracking", "/app/parcels", "/app/reception"],
   Finance: ["/app/reports", "/app/payments"],

@@ -8,7 +8,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useAuth } from "@/hooks/use-auth";
 import { useTenant } from "@/hooks/use-tenant";
+import { updateCompanyBrand, uploadCompanyLogo } from "@/lib/api/company-brand";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/app/settings")({
@@ -22,6 +24,126 @@ export const Route = createFileRoute("/app/settings")({
   }),
   component: SettingsPage,
 });
+
+function BrandingEditor() {
+  const { companyId } = useAuth();
+  const { tenant, updateTenant, refreshTenant } = useTenant();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [name, setName] = useState(tenant.name);
+  const [tagline, setTagline] = useState(tenant.tagline);
+  const [primary, setPrimary] = useState(tenant.primaryColor);
+  const [accent, setAccent] = useState(tenant.accentColor);
+  const [phone, setPhone] = useState(tenant.supportPhone);
+  const [logoUrl, setLogoUrl] = useState(tenant.logoUrl);
+  const [saving, setSaving] = useState(false);
+
+  const companyKey = companyId || tenant.id;
+
+  return (
+    <div>
+      <p className="mb-6 text-sm text-muted-foreground">
+        These settings appear on your customer portal and as the installable app icon. Customers only see your brand.
+      </p>
+      <div className="flex flex-wrap items-start gap-8">
+        <div>
+          <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">Company logo</p>
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            className="grid h-24 w-24 place-items-center overflow-hidden rounded-2xl border border-dashed border-border bg-muted/40"
+          >
+            {logoUrl ? (
+              <img src={logoUrl} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <span className="text-xs text-muted-foreground">Logo</span>
+            )}
+          </button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-3 rounded-full"
+            onClick={() => fileRef.current?.click()}
+          >
+            Upload logo
+          </Button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              const result = await uploadCompanyLogo(companyKey, file);
+              if ("error" in result) {
+                toast.error(result.error);
+                return;
+              }
+              setLogoUrl(result.url);
+              updateTenant({ logoUrl: result.url });
+              toast.success("Logo uploaded");
+            }}
+          />
+        </div>
+      </div>
+      <div className="mt-6 grid gap-5 sm:grid-cols-2">
+        <div className="space-y-2">
+          <Label>Display name</Label>
+          <Input value={name} onChange={(e) => setName(e.target.value)} className="h-11 rounded-xl" />
+        </div>
+        <div className="space-y-2">
+          <Label>Tagline</Label>
+          <Input value={tagline} onChange={(e) => setTagline(e.target.value)} className="h-11 rounded-xl" />
+        </div>
+        <div className="space-y-2">
+          <Label>Primary colour</Label>
+          <Input type="color" value={primary} onChange={(e) => setPrimary(e.target.value)} className="h-11 rounded-xl p-1" />
+        </div>
+        <div className="space-y-2">
+          <Label>Accent colour</Label>
+          <Input type="color" value={accent} onChange={(e) => setAccent(e.target.value)} className="h-11 rounded-xl p-1" />
+        </div>
+        <div className="space-y-2">
+          <Label>Support phone</Label>
+          <Input value={phone} onChange={(e) => setPhone(e.target.value)} className="h-11 rounded-xl" />
+        </div>
+      </div>
+      <Button
+        className="mt-6 rounded-full"
+        disabled={saving}
+        onClick={async () => {
+          setSaving(true);
+          const result = await updateCompanyBrand({
+            companyId: companyKey,
+            name,
+            tagline,
+            primaryColor: primary,
+            accentColor: accent,
+            supportPhone: phone,
+            logoUrl,
+          });
+          setSaving(false);
+          if (!result.ok) {
+            toast.error(result.error ?? "Save failed");
+            return;
+          }
+          updateTenant({
+            name,
+            tagline,
+            primaryColor: primary,
+            accentColor: accent,
+            supportPhone: phone,
+            logoUrl,
+          });
+          await refreshTenant();
+          toast.success("Branding saved");
+        }}
+      >
+        Save branding
+      </Button>
+    </div>
+  );
+}
 
 function PriceChartUploader() {
   const { tenant, updateTenant } = useTenant();
@@ -159,52 +281,7 @@ function SettingsPage() {
         </TabsContent>
 
         <TabsContent value="branding" className="card-elevated mt-5 p-6">
-          <p className="mb-6 text-sm text-muted-foreground">
-            These settings appear on your customer portal, tracking pages and staff login. Customers only see your brand.
-          </p>
-          <div className="flex flex-wrap items-start gap-8">
-            <div>
-              <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">Company logo</p>
-              <div className="grid h-24 w-24 place-items-center rounded-2xl border border-dashed border-border bg-muted/40 text-xs text-muted-foreground">
-                Logo
-              </div>
-              <Button variant="outline" size="sm" className="mt-3 rounded-full">Upload logo</Button>
-            </div>
-            <div>
-              <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">Portal background</p>
-              <div className="h-24 w-40 overflow-hidden rounded-2xl border border-border">
-                <img src="/images/hero-courier-ops.jpg" alt="" className="h-full w-full object-cover" />
-              </div>
-              <Button variant="outline" size="sm" className="mt-3 rounded-full">Change image</Button>
-            </div>
-          </div>
-          <div className="mt-6 grid gap-5 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label>Display name</Label>
-              <Input defaultValue="Swift Logistics" className="h-11 rounded-xl" />
-            </div>
-            <div className="space-y-2">
-              <Label>Tagline</Label>
-              <Input defaultValue="Fast. Reliable. Everywhere." className="h-11 rounded-xl" />
-            </div>
-            <div className="space-y-2">
-              <Label>Primary colour</Label>
-              <Input defaultValue="#0F766E" className="h-11 rounded-xl" />
-            </div>
-            <div className="space-y-2">
-              <Label>Accent colour</Label>
-              <Input defaultValue="#F59E0B" className="h-11 rounded-xl" />
-            </div>
-            <div className="space-y-2">
-              <Label>Tracking page domain</Label>
-              <Input defaultValue="track.swiftlogistics.zm" className="h-11 rounded-xl" />
-            </div>
-            <div className="space-y-2">
-              <Label>Support phone</Label>
-              <Input defaultValue="+260 211 234 500" className="h-11 rounded-xl" />
-            </div>
-          </div>
-          <Button className="mt-6 rounded-full">Save branding</Button>
+          <BrandingEditor />
         </TabsContent>
 
         <TabsContent value="messaging" className="card-elevated mt-5 p-6">

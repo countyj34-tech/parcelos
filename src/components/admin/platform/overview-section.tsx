@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import { useSyncExternalStore } from "react";
 import { Link } from "@tanstack/react-router";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -7,21 +8,25 @@ import { StatCard } from "@/components/dashboard/stat-card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { StatusPill } from "@/components/status-pill";
-import { usePlatformOverviewStats } from "@/hooks/use-companies";
+import { usePlatformCompanies, usePlatformOverviewStats } from "@/hooks/use-companies";
+import { fetchPlatformPayments } from "@/lib/api/payments";
 import {
   PLATFORM_ACTIVITIES,
   PLATFORM_CHARTS,
-  getPlatformCompanies,
   PLATFORM_OVERVIEW,
-  RECENT_PAYMENTS,
 } from "@/lib/platform-data";
 import { TICKETS } from "@/lib/mock-data";
 import { isCompanyAccessBlocked, subscribeCompanyLifecycle } from "@/lib/company-lifecycle";
 
 export function OverviewSection() {
   const { data: liveStats } = usePlatformOverviewStats();
+  const { data: companies = [] } = usePlatformCompanies();
+  const { data: payments = [] } = useQuery({
+    queryKey: ["platform", "payments"],
+    queryFn: fetchPlatformPayments,
+    staleTime: 30_000,
+  });
   useSyncExternalStore(subscribeCompanyLifecycle, () => Date.now(), () => 0);
-  const companies = getPlatformCompanies();
   const demoSuspended = companies.filter((c) => isCompanyAccessBlocked(c.status)).length;
   const k = liveStats
     ? { ...PLATFORM_OVERVIEW, ...liveStats, monthlyRevenue: PLATFORM_OVERVIEW.monthlyRevenue }
@@ -31,6 +36,7 @@ export function OverviewSection() {
         trialCompanies: companies.filter((c) => c.status === "Trial").length,
         expiredCompanies: companies.filter((c) => c.status === "Expired").length,
         suspendedCompanies: demoSuspended,
+        totalCompanies: companies.length,
       };
 
   return (
@@ -111,12 +117,16 @@ export function OverviewSection() {
         </FeedCard>
         <FeedCard title="Recent payments">
           <ul className="space-y-3">
-            {RECENT_PAYMENTS.map((p) => (
-              <li key={p.company} className="flex justify-between text-sm">
-                <span>{p.company}</span>
-                <span className="font-medium">{p.amount}</span>
-              </li>
-            ))}
+            {payments.length === 0 ? (
+              <li className="text-sm text-muted-foreground">No payments yet</li>
+            ) : (
+              payments.slice(0, 5).map((p) => (
+                <li key={p.id} className="flex justify-between text-sm">
+                  <span>{p.company}{p.tracking ? ` · ${p.tracking}` : ""}</span>
+                  <span className="font-medium">{p.amount}</span>
+                </li>
+              ))
+            )}
           </ul>
         </FeedCard>
         <FeedCard title="Support tickets">

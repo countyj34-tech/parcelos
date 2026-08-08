@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useTenant } from "@/hooks/use-tenant";
+import { useTenantPwaManifest } from "@/hooks/use-tenant-pwa-manifest";
 
 /**
  * Customer entry from share link / QR.
@@ -15,8 +16,9 @@ export const Route = createFileRoute("/c/$slug")({
 
 function CustomerTenantEntry() {
   const { slug } = Route.useParams();
-  const { activateTenant } = useTenant();
+  const { activateTenant, tenant } = useTenant();
   const navigate = useNavigate();
+  useTenantPwaManifest();
 
   useEffect(() => {
     let cancelled = false;
@@ -34,7 +36,9 @@ function CustomerTenantEntry() {
   return (
     <div className="grid min-h-svh place-items-center bg-background px-6 text-center">
       <div>
-        <p className="text-sm font-medium text-foreground">Opening your courier portal…</p>
+        <p className="text-sm font-medium text-foreground">
+          Opening {tenant.slug === slug ? tenant.name : "your courier"} portal…
+        </p>
         <p className="mt-1 text-xs text-muted-foreground">One moment</p>
       </div>
     </div>

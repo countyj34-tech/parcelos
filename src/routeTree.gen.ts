@@ -22,6 +22,7 @@ import { Route as AppCompaniesRouteImport } from './routes/app.companies'
 import { Route as AppCustomersRouteImport } from './routes/app.customers'
 import { Route as AppDispatchRouteImport } from './routes/app.dispatch'
 import { Route as AppNotificationsRouteImport } from './routes/app.notifications'
+import { Route as AppOnboardingRouteImport } from './routes/app.onboarding'
 import { Route as AppParcelsRouteImport } from './routes/app.parcels'
 import { Route as AppPaymentsRouteImport } from './routes/app.payments'
 import { Route as AppReceptionRouteImport } from './routes/app.reception'
@@ -39,6 +40,7 @@ import { Route as PortalProfileRouteImport } from './routes/portal.profile'
 import { Route as PortalRegisterRouteImport } from './routes/portal.register'
 import { Route as PortalSignInRouteImport } from './routes/portal.sign-in'
 import { Route as PortalTrackRouteImport } from './routes/portal.track'
+import { Route as AppReceptionRegisterRouteImport } from './routes/app.reception.register'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -103,6 +105,11 @@ const AppDispatchRoute = AppDispatchRouteImport.update({
 const AppNotificationsRoute = AppNotificationsRouteImport.update({
   id: '/notifications',
   path: '/notifications',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppOnboardingRoute = AppOnboardingRouteImport.update({
+  id: '/onboarding',
+  path: '/onboarding',
   getParentRoute: () => AppRoute,
 } as any)
 const AppParcelsRoute = AppParcelsRouteImport.update({
@@ -190,6 +197,11 @@ const PortalTrackRoute = PortalTrackRouteImport.update({
   path: '/track',
   getParentRoute: () => PortalRoute,
 } as any)
+const AppReceptionRegisterRoute = AppReceptionRegisterRouteImport.update({
+  id: '/register',
+  path: '/register',
+  getParentRoute: () => AppReceptionRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -204,9 +216,10 @@ export interface FileRoutesByFullPath {
   '/app/customers': typeof AppCustomersRoute
   '/app/dispatch': typeof AppDispatchRoute
   '/app/notifications': typeof AppNotificationsRoute
+  '/app/onboarding': typeof AppOnboardingRoute
   '/app/parcels': typeof AppParcelsRoute
   '/app/payments': typeof AppPaymentsRoute
-  '/app/reception': typeof AppReceptionRoute
+  '/app/reception': typeof AppReceptionRouteWithChildren
   '/app/reports': typeof AppReportsRoute
   '/app/settings': typeof AppSettingsRoute
   '/app/subscription': typeof AppSubscriptionRoute
@@ -222,6 +235,7 @@ export interface FileRoutesByFullPath {
   '/portal/track': typeof PortalTrackRoute
   '/app/': typeof AppIndexRoute
   '/portal/': typeof PortalIndexRoute
+  '/app/reception/register': typeof AppReceptionRegisterRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -234,9 +248,10 @@ export interface FileRoutesByTo {
   '/app/customers': typeof AppCustomersRoute
   '/app/dispatch': typeof AppDispatchRoute
   '/app/notifications': typeof AppNotificationsRoute
+  '/app/onboarding': typeof AppOnboardingRoute
   '/app/parcels': typeof AppParcelsRoute
   '/app/payments': typeof AppPaymentsRoute
-  '/app/reception': typeof AppReceptionRoute
+  '/app/reception': typeof AppReceptionRouteWithChildren
   '/app/reports': typeof AppReportsRoute
   '/app/settings': typeof AppSettingsRoute
   '/app/subscription': typeof AppSubscriptionRoute
@@ -252,6 +267,7 @@ export interface FileRoutesByTo {
   '/portal/track': typeof PortalTrackRoute
   '/app': typeof AppIndexRoute
   '/portal': typeof PortalIndexRoute
+  '/app/reception/register': typeof AppReceptionRegisterRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -267,9 +283,10 @@ export interface FileRoutesById {
   '/app/customers': typeof AppCustomersRoute
   '/app/dispatch': typeof AppDispatchRoute
   '/app/notifications': typeof AppNotificationsRoute
+  '/app/onboarding': typeof AppOnboardingRoute
   '/app/parcels': typeof AppParcelsRoute
   '/app/payments': typeof AppPaymentsRoute
-  '/app/reception': typeof AppReceptionRoute
+  '/app/reception': typeof AppReceptionRouteWithChildren
   '/app/reports': typeof AppReportsRoute
   '/app/settings': typeof AppSettingsRoute
   '/app/subscription': typeof AppSubscriptionRoute
@@ -285,6 +302,7 @@ export interface FileRoutesById {
   '/portal/track': typeof PortalTrackRoute
   '/app/': typeof AppIndexRoute
   '/portal/': typeof PortalIndexRoute
+  '/app/reception/register': typeof AppReceptionRegisterRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -301,6 +319,7 @@ export interface FileRouteTypes {
     | '/app/customers'
     | '/app/dispatch'
     | '/app/notifications'
+    | '/app/onboarding'
     | '/app/parcels'
     | '/app/payments'
     | '/app/reception'
@@ -319,6 +338,7 @@ export interface FileRouteTypes {
     | '/portal/track'
     | '/app/'
     | '/portal/'
+    | '/app/reception/register'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -331,6 +351,7 @@ export interface FileRouteTypes {
     | '/app/customers'
     | '/app/dispatch'
     | '/app/notifications'
+    | '/app/onboarding'
     | '/app/parcels'
     | '/app/payments'
     | '/app/reception'
@@ -349,6 +370,7 @@ export interface FileRouteTypes {
     | '/portal/track'
     | '/app'
     | '/portal'
+    | '/app/reception/register'
   id:
     | '__root__'
     | '/'
@@ -363,6 +385,7 @@ export interface FileRouteTypes {
     | '/app/customers'
     | '/app/dispatch'
     | '/app/notifications'
+    | '/app/onboarding'
     | '/app/parcels'
     | '/app/payments'
     | '/app/reception'
@@ -381,6 +404,7 @@ export interface FileRouteTypes {
     | '/portal/track'
     | '/app/'
     | '/portal/'
+    | '/app/reception/register'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -485,6 +509,13 @@ declare module '@tanstack/react-router' {
       path: '/notifications'
       fullPath: '/app/notifications'
       preLoaderRoute: typeof AppNotificationsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/onboarding': {
+      id: '/app/onboarding'
+      path: '/onboarding'
+      fullPath: '/app/onboarding'
+      preLoaderRoute: typeof AppOnboardingRouteImport
       parentRoute: typeof AppRoute
     }
     '/app/parcels': {
@@ -606,8 +637,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PortalTrackRouteImport
       parentRoute: typeof PortalRoute
     }
+    '/app/reception/register': {
+      id: '/app/reception/register'
+      path: '/register'
+      fullPath: '/app/reception/register'
+      preLoaderRoute: typeof AppReceptionRegisterRouteImport
+      parentRoute: typeof AppReceptionRoute
+    }
   }
 }
+
+interface AppReceptionRouteChildren {
+  AppReceptionRegisterRoute: typeof AppReceptionRegisterRoute
+}
+
+const AppReceptionRouteChildren: AppReceptionRouteChildren = {
+  AppReceptionRegisterRoute: AppReceptionRegisterRoute,
+}
+
+const AppReceptionRouteWithChildren = AppReceptionRoute._addFileChildren(
+  AppReceptionRouteChildren,
+)
 
 interface AppRouteChildren {
   AppBranchesRoute: typeof AppBranchesRoute
@@ -615,9 +665,10 @@ interface AppRouteChildren {
   AppCustomersRoute: typeof AppCustomersRoute
   AppDispatchRoute: typeof AppDispatchRoute
   AppNotificationsRoute: typeof AppNotificationsRoute
+  AppOnboardingRoute: typeof AppOnboardingRoute
   AppParcelsRoute: typeof AppParcelsRoute
   AppPaymentsRoute: typeof AppPaymentsRoute
-  AppReceptionRoute: typeof AppReceptionRoute
+  AppReceptionRoute: typeof AppReceptionRouteWithChildren
   AppReportsRoute: typeof AppReportsRoute
   AppSettingsRoute: typeof AppSettingsRoute
   AppSubscriptionRoute: typeof AppSubscriptionRoute
@@ -633,9 +684,10 @@ const AppRouteChildren: AppRouteChildren = {
   AppCustomersRoute: AppCustomersRoute,
   AppDispatchRoute: AppDispatchRoute,
   AppNotificationsRoute: AppNotificationsRoute,
+  AppOnboardingRoute: AppOnboardingRoute,
   AppParcelsRoute: AppParcelsRoute,
   AppPaymentsRoute: AppPaymentsRoute,
-  AppReceptionRoute: AppReceptionRoute,
+  AppReceptionRoute: AppReceptionRouteWithChildren,
   AppReportsRoute: AppReportsRoute,
   AppSettingsRoute: AppSettingsRoute,
   AppSubscriptionRoute: AppSubscriptionRoute,
