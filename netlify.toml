@@ -1,0 +1,18 @@
+# ParcelOS — Netlify build settings
+# https://docs.netlify.com/build/frameworks/framework-setup-guides/tanstack-start/
+
+[build]
+  command = "npm run build"
+  publish = "dist/client"
+
+[build.environment]
+  # Pin LTS — Node 24 download was failing mid-install on Netlify
+  NODE_VERSION = "22"
+  NPM_FLAGS = "--no-audit --no-fund"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
