@@ -1,0 +1,286 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { useRef, useState } from "react";
+import { ImagePlus, Trash2, Upload } from "lucide-react";
+import { PageHeader } from "@/components/dashboard/dashboard-shell";
+import { SharePortalPanel } from "@/components/dashboard/share-portal-panel";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useTenant } from "@/hooks/use-tenant";
+import { toast } from "sonner";
+
+export const Route = createFileRoute("/app/settings")({
+  head: () => ({
+    meta: [
+      { title: "Settings — ParcelOS" },
+      { name: "description", content: "Company profile, branding, SMS and WhatsApp settings, API keys and security." },
+      { property: "og:title", content: "Settings — ParcelOS" },
+      { property: "og:description", content: "Workspace configuration for your courier company." },
+    ],
+  }),
+  component: SettingsPage,
+});
+
+function PriceChartUploader() {
+  const { tenant, updateTenant } = useTenant();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+
+  const onFile = async (file: File | null) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please upload an image (JPG, PNG, or SVG)");
+      return;
+    }
+    if (file.size > 4 * 1024 * 1024) {
+      toast.error("Image must be under 4MB");
+      return;
+    }
+    setBusy(true);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(new Error("Read failed"));
+        reader.readAsDataURL(file);
+      });
+      updateTenant({ priceChartUrl: dataUrl });
+      toast.success("Price chart uploaded — visible on customer portal");
+    } catch {
+      toast.error("Could not upload chart");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_280px]">
+      <div className="space-y-4">
+        <div className="overflow-hidden rounded-2xl border border-border bg-muted/20">
+          {tenant.priceChartUrl ? (
+            <img
+              src={tenant.priceChartUrl}
+              alt={`${tenant.name} price chart`}
+              className="max-h-[420px] w-full object-contain object-top"
+            />
+          ) : (
+            <div className="grid h-56 place-items-center px-6 text-center text-sm text-muted-foreground">
+              <div>
+                <ImagePlus className="mx-auto mb-2 h-8 w-8 opacity-50" />
+                No price chart yet. Upload the sheet you display at the counter.
+              </div>
+            </div>
+          )}
+        </div>
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => void onFile(e.target.files?.[0] ?? null)}
+        />
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            className="rounded-xl"
+            disabled={busy}
+            onClick={() => inputRef.current?.click()}
+          >
+            <Upload className="mr-1.5 h-4 w-4" />
+            {tenant.priceChartUrl ? "Replace chart" : "Upload chart"}
+          </Button>
+          {tenant.priceChartUrl ? (
+            <Button
+              type="button"
+              variant="outline"
+              className="rounded-xl"
+              onClick={() => {
+                updateTenant({ priceChartUrl: null });
+                toast.message("Price chart removed from portal");
+              }}
+            >
+              <Trash2 className="mr-1.5 h-4 w-4" /> Remove
+            </Button>
+          ) : null}
+        </div>
+      </div>
+      <div className="rounded-2xl border border-border bg-muted/30 p-4 text-sm text-muted-foreground">
+        <p className="font-medium text-foreground">How customers see this</p>
+        <ul className="mt-3 list-disc space-y-2 pl-4">
+          <li>Shown on the send-parcel flow as “View rates”.</li>
+          <li>Ranges only — fee is confirmed at drop-off after weighing.</li>
+          <li>Use a clear photo or scan of your printed counter chart.</li>
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+function SettingsPage() {
+  const { tenant } = useTenant();
+
+  return (
+    <div>
+      <PageHeader title="Settings" description={`${tenant.name} workspace configuration`} />
+      <Tabs defaultValue="launch">
+        <TabsList className="mb-4 flex h-auto flex-wrap gap-1">
+          <TabsTrigger value="launch">Launch & share</TabsTrigger>
+          <TabsTrigger value="profile">Company</TabsTrigger>
+          <TabsTrigger value="branding">Logo & theme</TabsTrigger>
+          <TabsTrigger value="operations">Branches & hours</TabsTrigger>
+          <TabsTrigger value="pricing">Categories & rates</TabsTrigger>
+          <TabsTrigger value="messaging">SMS & WhatsApp</TabsTrigger>
+          <TabsTrigger value="receipts">Receipts & printers</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="launch" className="card-elevated mt-5 p-6">
+          <SharePortalPanel />
+        </TabsContent>
+
+        <TabsContent value="profile" className="card-elevated mt-5 p-6">
+          <div className="grid gap-5 sm:grid-cols-2">
+            {[
+              ["Company name", "Swift Logistics Limited"],
+              ["Trading name", "Swift Logistics"],
+              ["Head office", "Cairo Road, Lusaka, Zambia"],
+              ["Registration number", "120210004567"],
+              ["TPIN", "1002938475"],
+              ["Support phone", "+260 211 234 500"],
+            ].map(([l, v]) => (
+              <div key={l} className="space-y-2">
+                <Label>{l}</Label>
+                <Input defaultValue={v} className="h-11 rounded-xl" />
+              </div>
+            ))}
+          </div>
+          <Button className="mt-6 rounded-full">Save company profile</Button>
+        </TabsContent>
+
+        <TabsContent value="branding" className="card-elevated mt-5 p-6">
+          <p className="mb-6 text-sm text-muted-foreground">
+            These settings appear on your customer portal, tracking pages and staff login. Customers only see your brand.
+          </p>
+          <div className="flex flex-wrap items-start gap-8">
+            <div>
+              <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">Company logo</p>
+              <div className="grid h-24 w-24 place-items-center rounded-2xl border border-dashed border-border bg-muted/40 text-xs text-muted-foreground">
+                Logo
+              </div>
+              <Button variant="outline" size="sm" className="mt-3 rounded-full">Upload logo</Button>
+            </div>
+            <div>
+              <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">Portal background</p>
+              <div className="h-24 w-40 overflow-hidden rounded-2xl border border-border">
+                <img src="/images/hero-courier-ops.jpg" alt="" className="h-full w-full object-cover" />
+              </div>
+              <Button variant="outline" size="sm" className="mt-3 rounded-full">Change image</Button>
+            </div>
+          </div>
+          <div className="mt-6 grid gap-5 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label>Display name</Label>
+              <Input defaultValue="Swift Logistics" className="h-11 rounded-xl" />
+            </div>
+            <div className="space-y-2">
+              <Label>Tagline</Label>
+              <Input defaultValue="Fast. Reliable. Everywhere." className="h-11 rounded-xl" />
+            </div>
+            <div className="space-y-2">
+              <Label>Primary colour</Label>
+              <Input defaultValue="#0F766E" className="h-11 rounded-xl" />
+            </div>
+            <div className="space-y-2">
+              <Label>Accent colour</Label>
+              <Input defaultValue="#F59E0B" className="h-11 rounded-xl" />
+            </div>
+            <div className="space-y-2">
+              <Label>Tracking page domain</Label>
+              <Input defaultValue="track.swiftlogistics.zm" className="h-11 rounded-xl" />
+            </div>
+            <div className="space-y-2">
+              <Label>Support phone</Label>
+              <Input defaultValue="+260 211 234 500" className="h-11 rounded-xl" />
+            </div>
+          </div>
+          <Button className="mt-6 rounded-full">Save branding</Button>
+        </TabsContent>
+
+        <TabsContent value="messaging" className="card-elevated mt-5 p-6">
+          <div className="divide-y divide-border">
+            {[
+              ["SMS on parcel received", "Sender and receiver notified at intake", true],
+              ["SMS on ready for collection", "Receiver notified when parcel arrives", true],
+              ["WhatsApp updates", "Rich tracking link via WhatsApp Business API", true],
+              ["Daily branch summary", "Manager receives an end-of-day SMS", false],
+            ].map(([t, d, on]) => (
+              <div key={t as string} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 py-4">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">{t}</p>
+                  <p className="text-xs text-muted-foreground">{d}</p>
+                </div>
+                <Switch defaultChecked={on as boolean} />
+              </div>
+            ))}
+          </div>
+          <div className="mt-5 grid gap-5 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label>SMS sender ID</Label>
+              <Input defaultValue="SWIFT" className="h-11 rounded-xl" />
+            </div>
+            <div className="space-y-2">
+              <Label>WhatsApp business number</Label>
+              <Input defaultValue="+260 211 234 599" className="h-11 rounded-xl" />
+            </div>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="operations" className="card-elevated mt-5 p-6">
+          <p className="text-sm text-muted-foreground">Manage branch locations and business hours.</p>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2"><Label>Default opening</Label><Input defaultValue="07:30" className="h-11 rounded-xl" /></div>
+            <div className="space-y-2"><Label>Default closing</Label><Input defaultValue="18:00" className="h-11 rounded-xl" /></div>
+          </div>
+          <Button className="mt-6 rounded-xl">Manage branches</Button>
+        </TabsContent>
+
+        <TabsContent value="pricing" className="card-elevated mt-5 space-y-6 p-6">
+          <div>
+            <h3 className="text-base font-semibold">Counter price chart</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Upload the same rate sheet customers see at your branch. Portal users can open it for fee ranges —
+              the final amount is still confirmed when staff weigh the parcel at drop-off.
+            </p>
+          </div>
+
+          <PriceChartUploader />
+
+          <div className="border-t border-border pt-6">
+            <h3 className="text-base font-semibold">Categories &amp; zones</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Structured rates can be added later. For now the uploaded chart is the customer-facing reference.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button variant="outline" className="rounded-xl" disabled>
+                Edit categories (coming soon)
+              </Button>
+              <Button variant="outline" className="rounded-xl" disabled>
+                Edit zone rates (coming soon)
+              </Button>
+            </div>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="receipts" className="card-elevated mt-5 p-6">
+          <div className="space-y-4">
+            <div className="space-y-2"><Label>Receipt header</Label><Input defaultValue="Swift Logistics" className="h-11 rounded-xl" /></div>
+            <div className="space-y-2"><Label>Default printer</Label><Input defaultValue="Counter thermal · EPSON TM-T88" className="h-11 rounded-xl" /></div>
+            <div className="space-y-2"><Label>Label printer</Label><Input defaultValue="Zebra ZD421" className="h-11 rounded-xl" /></div>
+          </div>
+          <Button className="mt-6 rounded-xl">Save printer settings</Button>
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
