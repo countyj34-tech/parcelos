@@ -1,10 +1,10 @@
 {
-  "name": "Swift Logistics",
-  "short_name": "Swift Logistics",
-  "description": "Send and track parcels with Swift Logistics",
-  "start_url": "/portal",
+  "name": "ParcelOS",
+  "short_name": "ParcelOS",
+  "description": "Create your courier brand, manage staff, and share your customer portal",
+  "start_url": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
+  "background_color": "#0f172a",
   "theme_color": "#0F766E",
   "orientation": "portrait-primary",
   "icons": [

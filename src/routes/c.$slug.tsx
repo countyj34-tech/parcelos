@@ -2,10 +2,11 @@ import { useEffect } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useTenant } from "@/hooks/use-tenant";
 import { useTenantPwaManifest } from "@/hooks/use-tenant-pwa-manifest";
+import { markCustomerPortalMode } from "@/lib/portal-mode";
 
 /**
  * Customer entry from share link / QR.
- * Activates that company's brand, then opens their portal.
+ * Activates that company brand, then opens their customer portal.
  */
 export const Route = createFileRoute("/c/$slug")({
   head: ({ params }) => ({
@@ -23,6 +24,7 @@ function CustomerTenantEntry() {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
+      markCustomerPortalMode();
       await activateTenant(slug);
       if (!cancelled) {
         void navigate({ to: "/portal", replace: true });
