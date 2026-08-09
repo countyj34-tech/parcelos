@@ -16,8 +16,8 @@ import {
   Truck,
   Warehouse,
 } from "lucide-react";
-import type { Parcel } from "@/lib/mock-data";
-import { money } from "@/lib/mock-data";
+import type { Parcel } from "@/lib/types/parcel";
+import { money } from "@/lib/money";
 
 const TIMELINE_ICONS = [Clock, PackageCheck, Warehouse, Truck, MapPin, PackageSearch, Handshake];
 

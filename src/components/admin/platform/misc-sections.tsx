@@ -1,4 +1,6 @@
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Megaphone, Plus, Send } from "lucide-react";
 import { AdminPageHeader } from "@/components/admin/admin-shell";
@@ -8,10 +10,21 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Progress } from "@/components/ui/progress";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { StatusPill } from "@/components/status-pill";
 import { usePlatformCompanies } from "@/hooks/use-companies";
 import { fetchPlatformPayments } from "@/lib/api/payments";
+import {
+  confirmManualSaasPayment,
+  fetchSaasRevenueDashboard,
+  listPendingManualPayments,
+  listPlatformPaymentAccounts,
+  listRecentSaasPayments,
+  savePlatformPaymentAccount,
+  type PlatformPaymentAccount,
+} from "@/lib/api/platform-billing";
+import { toast } from "sonner";
 import {
   AUDIT_LOGS,
   FEATURE_FLAGS,
@@ -107,6 +120,115 @@ export function BillingSection() {
     queryFn: fetchPlatformPayments,
     staleTime: 30_000,
   });
+  const queryClient = useQueryClient();
+  const { data: accounts = [], isLoading: accountsLoading } = useQuery({
+    queryKey: ["platform", "payment-accounts"],
+    queryFn: listPlatformPaymentAccounts,
+    staleTime: 15_000,
+  });
+  const { data: pending = [], refetch: refetchPending } = useQuery({
+    queryKey: ["platform", "pending-manual"],
+    queryFn: listPendingManualPayments,
+    staleTime: 10_000,
+  });
+  const { data: revenue } = useQuery({
+    queryKey: ["platform", "saas-revenue"],
+    queryFn: fetchSaasRevenueDashboard,
+    staleTime: 15_000,
+    refetchInterval: 60_000,
+  });
+  const { data: recentSaas = [] } = useQuery({
+    queryKey: ["platform", "saas-payments"],
+    queryFn: () => listRecentSaasPayments(40),
+    staleTime: 15_000,
+    refetchInterval: 60_000,
+  });
+
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<PlatformPaymentAccount | null>(null);
+  const [draft, setDraft] = useState({
+    kind: "mobile_money" as "mobile_money" | "bank",
+    provider: "mtn",
+    label: "",
+    accountName: "",
+    accountNumber: "",
+    bankBranch: "",
+    sortCode: "",
+    instructions: "",
+    sortOrder: 0,
+  });
+  const [saving, setSaving] = useState(false);
+  const [confirming, setConfirming] = useState<string | null>(null);
+
+  const openEdit = (a?: PlatformPaymentAccount) => {
+    setFormOpen(true);
+    if (a) {
+      setEditing(a);
+      setDraft({
+        kind: a.kind,
+        provider: a.provider,
+        label: a.label,
+        accountName: a.accountName,
+        accountNumber: a.accountNumber,
+        bankBranch: a.bankBranch ?? "",
+        sortCode: a.sortCode ?? "",
+        instructions: a.instructions ?? "",
+        sortOrder: a.sortOrder,
+      });
+    } else {
+      setEditing(null);
+      setDraft({
+        kind: "bank",
+        provider: "uba",
+        label: "UBA Bank Zambia",
+        accountName: "",
+        accountNumber: "",
+        bankBranch: "",
+        sortCode: "",
+        instructions: "Bank transfer · put the payment reference in the narration",
+        sortOrder: 20,
+      });
+    }
+  };
+
+  const onSaveAccount = async () => {
+    if (!draft.label.trim() || !draft.accountNumber.trim() || !draft.accountName.trim()) {
+      toast.error("Label, account name, and number are required");
+      return;
+    }
+    setSaving(true);
+    try {
+      await savePlatformPaymentAccount({
+        id: editing?.id,
+        ...draft,
+        isActive: true,
+      });
+      toast.success(editing ? "Account updated" : "Account added");
+      setFormOpen(false);
+      setEditing(null);
+      void queryClient.invalidateQueries({ queryKey: ["platform", "payment-accounts"] });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const onConfirm = async (txRef: string) => {
+    setConfirming(txRef);
+    try {
+      await confirmManualSaasPayment(txRef);
+      toast.success(`Confirmed ${txRef} — company unlocked`);
+      void refetchPending();
+      void queryClient.invalidateQueries({ queryKey: ["platform", "saas-revenue"] });
+      void queryClient.invalidateQueries({ queryKey: ["platform", "saas-payments"] });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Confirm failed");
+    } finally {
+      setConfirming(null);
+    }
+  };
+
   const invoices = companies.map((c, i) => ({
     id: `INV-${c.code || i}`,
     company: c.name,
@@ -115,9 +237,270 @@ export function BillingSection() {
     date: c.expiryDate,
   }));
 
+  const fmtK = (n: number) => `K${n.toLocaleString("en-ZM", { maximumFractionDigits: 0 })}`;
+
   return (
     <div className="space-y-6">
-      <AdminPageHeader title="Billing" description="Invoices, payments and revenue" />
+      <AdminPageHeader
+        title="Billing"
+        description="Live SaaS revenue, GenesysPay auto-payments, and manual confirm"
+        actions={
+          <Button className="rounded-lg" onClick={() => openEdit()}>
+            <Plus className="mr-2 h-4 w-4" /> Add account
+          </Button>
+        }
+      />
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard label="Your cut today" value={fmtK(revenue?.platformToday ?? 0)} />
+        <StatCard label="Your cut this month" value={fmtK(revenue?.platformMonth ?? 0)} />
+        <StatCard label="Gross this month" value={fmtK(revenue?.revenueMonth ?? 0)} />
+        <StatCard label="Paid companies" value={String(revenue?.activePaidCompanies ?? 0)} />
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard label="All-time your cut" value={fmtK(revenue?.platformAllTime ?? 0)} />
+        <StatCard label="AT reserve (month)" value={fmtK(revenue?.providerMonth ?? 0)} />
+        <StatCard label="Successful pays (month)" value={String(revenue?.successCountMonth ?? 0)} />
+        <StatCard label="Pending manual" value={String(revenue?.pendingManualCount ?? pending.length)} />
+      </div>
+
+      <div className="overflow-hidden rounded-xl border border-border bg-card shadow-card">
+        <div className="border-b border-border px-5 py-4">
+          <h2 className="text-sm font-semibold">Recent SaaS payments</h2>
+          <p className="text-xs text-muted-foreground">Genesys auto + manual — refreshes every minute</p>
+        </div>
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-muted/40 hover:bg-muted/40">
+              <TableHead>When</TableHead>
+              <TableHead>Company</TableHead>
+              <TableHead>Cover</TableHead>
+              <TableHead>Path</TableHead>
+              <TableHead>Total</TableHead>
+              <TableHead>Your cut</TableHead>
+              <TableHead>Status</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {recentSaas.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={7} className="text-center text-muted-foreground">
+                  No SaaS payments yet
+                </TableCell>
+              </TableRow>
+            ) : (
+              recentSaas.map((row) => (
+                <TableRow key={row.id}>
+                  <TableCell className="text-xs text-muted-foreground">
+                    {new Date(row.updatedAt).toLocaleString("en-GB", {
+                      day: "numeric",
+                      month: "short",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </TableCell>
+                  <TableCell>{row.companyName}</TableCell>
+                  <TableCell className="text-xs">
+                    {row.planName} · {row.months} mo
+                  </TableCell>
+                  <TableCell className="text-xs capitalize">{row.paymentPath}</TableCell>
+                  <TableCell>{fmtK(row.amountMajor)}</TableCell>
+                  <TableCell className="text-emerald-700">{fmtK(row.amountPlatform)}</TableCell>
+                  <TableCell>
+                    <StatusPill status={row.status} />
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      <div className="rounded-xl border border-border bg-card p-5 shadow-card">
+        <h2 className="text-sm font-semibold">Receive payments here</h2>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Companies see these on Subscription — put your real MTN / Airtel / UBA / Access numbers.
+        </p>
+        {accountsLoading ? (
+          <p className="mt-4 text-sm text-muted-foreground">Loading…</p>
+        ) : (
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            {accounts.map((a) => (
+              <div key={a.id} className="rounded-xl border border-border p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="text-xs uppercase text-muted-foreground">{a.kind === "bank" ? "Bank" : "Mobile Money"}</p>
+                    <p className="font-semibold">{a.label}</p>
+                    <p className="text-sm text-muted-foreground">{a.accountName}</p>
+                    <p className="mt-1 font-mono text-sm font-bold">{a.accountNumber}</p>
+                    {a.bankBranch ? <p className="text-xs text-muted-foreground">Branch: {a.bankBranch}</p> : null}
+                  </div>
+                  <Button size="sm" variant="outline" className="rounded-lg" onClick={() => openEdit(a)}>
+                    Edit
+                  </Button>
+                </div>
+              </div>
+            ))}
+            {!accounts.length ? (
+              <p className="text-sm text-muted-foreground md:col-span-2">No accounts yet — add MTN, Airtel, UBA, Access…</p>
+            ) : null}
+          </div>
+        )}
+
+        {formOpen ? (
+          <div className="mt-5 grid gap-3 rounded-xl border border-dashed border-border p-4 sm:grid-cols-2">
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label>Type</Label>
+              <Select
+                value={draft.kind}
+                onValueChange={(v) => setDraft((d) => ({ ...d, kind: v as "mobile_money" | "bank" }))}
+              >
+                <SelectTrigger className="rounded-xl">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="mobile_money">Mobile Money</SelectItem>
+                  <SelectItem value="bank">Bank</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Provider code</Label>
+              <Input
+                className="rounded-xl"
+                value={draft.provider}
+                onChange={(e) => setDraft((d) => ({ ...d, provider: e.target.value }))}
+                placeholder="mtn / airtel / uba / access"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Label</Label>
+              <Input
+                className="rounded-xl"
+                value={draft.label}
+                onChange={(e) => setDraft((d) => ({ ...d, label: e.target.value }))}
+                placeholder="MTN Mobile Money"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Account name</Label>
+              <Input
+                className="rounded-xl"
+                value={draft.accountName}
+                onChange={(e) => setDraft((d) => ({ ...d, accountName: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Number / account</Label>
+              <Input
+                className="rounded-xl"
+                value={draft.accountNumber}
+                onChange={(e) => setDraft((d) => ({ ...d, accountNumber: e.target.value }))}
+                placeholder="097… or bank account"
+              />
+            </div>
+            {draft.kind === "bank" ? (
+              <>
+                <div className="space-y-1.5">
+                  <Label>Branch</Label>
+                  <Input
+                    className="rounded-xl"
+                    value={draft.bankBranch}
+                    onChange={(e) => setDraft((d) => ({ ...d, bankBranch: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Sort / branch code</Label>
+                  <Input
+                    className="rounded-xl"
+                    value={draft.sortCode}
+                    onChange={(e) => setDraft((d) => ({ ...d, sortCode: e.target.value }))}
+                  />
+                </div>
+              </>
+            ) : null}
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label>Instructions</Label>
+              <Input
+                className="rounded-xl"
+                value={draft.instructions}
+                onChange={(e) => setDraft((d) => ({ ...d, instructions: e.target.value }))}
+              />
+            </div>
+            <div className="flex gap-2 sm:col-span-2">
+              <Button className="rounded-xl" disabled={saving} onClick={() => void onSaveAccount()}>
+                {saving ? "Saving…" : "Save account"}
+              </Button>
+              <Button variant="ghost" className="rounded-xl" onClick={() => setFormOpen(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      <div className="overflow-hidden rounded-xl border border-border bg-card shadow-card">
+        <div className="border-b border-border px-5 py-4">
+          <h2 className="text-sm font-semibold">Pending direct payments</h2>
+          <p className="text-xs text-muted-foreground">
+            Confirm after MoMo/bank credit — split shows ParcelOS vs Africa&apos;s Talking
+          </p>
+        </div>
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-muted/40 hover:bg-muted/40">
+              <TableHead>Reference</TableHead>
+              <TableHead>Company</TableHead>
+              <TableHead>Cover</TableHead>
+              <TableHead>Total</TableHead>
+              <TableHead>Your cut</TableHead>
+              <TableHead>AT reserve</TableHead>
+              <TableHead>Via</TableHead>
+              <TableHead />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {pending.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={8} className="text-center text-muted-foreground">
+                  No pending claims
+                </TableCell>
+              </TableRow>
+            ) : (
+              pending.map((row) => (
+                <TableRow key={row.id}>
+                  <TableCell className="font-mono text-xs font-semibold">{row.txRef}</TableCell>
+                  <TableCell>{row.companyName}</TableCell>
+                  <TableCell className="text-xs">
+                    {row.planName} · {row.months} mo
+                    {row.smsCredits ? ` · ${row.smsCredits.toLocaleString()} SMS` : ""}
+                    {row.whatsappMonths ? ` · WA ${row.whatsappMonths}m` : ""}
+                  </TableCell>
+                  <TableCell>K{row.amountMajor.toLocaleString("en-ZM", { maximumFractionDigits: 0 })}</TableCell>
+                  <TableCell className="text-emerald-700">
+                    K{row.amountPlatform.toLocaleString("en-ZM", { maximumFractionDigits: 0 })}
+                  </TableCell>
+                  <TableCell className="text-amber-700">
+                    K{row.amountProvider.toLocaleString("en-ZM", { maximumFractionDigits: 0 })}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">{row.accountLabel ?? "—"}</TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      size="sm"
+                      className="rounded-lg"
+                      disabled={confirming === row.txRef || row.status !== "submitted"}
+                      onClick={() => void onConfirm(row.txRef)}
+                    >
+                      {confirming === row.txRef ? "…" : row.status === "submitted" ? "Confirm & unlock" : "Waiting claim"}
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {[
           ["Companies", String(companies.length)],
@@ -128,6 +511,7 @@ export function BillingSection() {
           <StatCard key={l} label={l} value={v} />
         ))}
       </div>
+
       <div className="overflow-hidden rounded-xl border border-border bg-card shadow-card">
         <div className="border-b border-border px-5 py-4">
           <h2 className="text-sm font-semibold">Companies &amp; subscription status</h2>
@@ -156,30 +540,14 @@ export function BillingSection() {
                   <TableCell>{inv.company}</TableCell>
                   <TableCell>{money(inv.amount, "K")}</TableCell>
                   <TableCell className="text-muted-foreground">{inv.date}</TableCell>
-                  <TableCell><StatusPill status={inv.status} /></TableCell>
+                  <TableCell>
+                    <StatusPill status={inv.status} />
+                  </TableCell>
                 </TableRow>
               ))
             )}
           </TableBody>
         </Table>
-      </div>
-      <div className="rounded-xl border border-border bg-card p-5 shadow-card">
-        <h2 className="text-sm font-semibold">Recent parcel payments</h2>
-        <ul className="mt-4 space-y-3">
-          {payments.length === 0 ? (
-            <li className="text-sm text-muted-foreground">No payments yet — they appear when reception completes checkout.</li>
-          ) : (
-            payments.map((p) => (
-              <li key={p.id} className="flex justify-between text-sm">
-                <span>
-                  {p.company}
-                  {p.tracking ? ` · ${p.tracking}` : ""} · {p.method}
-                </span>
-                <span className="font-medium">{p.amount}</span>
-              </li>
-            ))
-          )}
-        </ul>
       </div>
     </div>
   );

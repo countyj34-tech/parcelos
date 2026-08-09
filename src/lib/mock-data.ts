@@ -1,40 +1,6 @@
-export type ParcelStatus =
-  | "Waiting for Drop-off"
-  | "Received"
-  | "Dispatched"
-  | "In Transit"
-  | "Arrived"
-  | "Ready for Collection"
-  | "Collected";
-
-export const PARCEL_FLOW: ParcelStatus[] = [
-  "Waiting for Drop-off",
-  "Received",
-  "Dispatched",
-  "In Transit",
-  "Arrived",
-  "Ready for Collection",
-  "Collected",
-];
-
-export type Parcel = {
-  id?: string;
-  tracking: string;
-  sender: string;
-  senderPhone: string;
-  receiver: string;
-  receiverPhone: string;
-  origin: string;
-  destination: string;
-  status: ParcelStatus;
-  payment: "Paid" | "Unpaid" | "Cash on Collection";
-  amount: number;
-  branch: string;
-  weight: string;
-  category: string;
-  declaredValue: number;
-  created: string;
-};
+export type { Parcel, ParcelStatus } from "@/lib/types/parcel";
+export { PARCEL_FLOW } from "@/lib/types/parcel";
+import type { Parcel } from "@/lib/types/parcel";
 
 export const BRANCHES = [
   "Lusaka — Cairo Road",

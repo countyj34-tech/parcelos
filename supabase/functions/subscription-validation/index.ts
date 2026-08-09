@@ -7,12 +7,23 @@ const corsHeaders = {
 };
 
 /**
- * Scheduled job: expire trials and suspend expired companies.
- * Invoke via Supabase cron or platform admin.
+ * Scheduled job: expire trials and suspend past-due companies.
+ * Wire in Supabase Dashboard → Edge Functions → Cron (hourly recommended).
  */
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
+  }
+
+  const secret = Deno.env.get("CRON_SECRET");
+  if (secret) {
+    const header = req.headers.get("x-cron-secret") ?? req.headers.get("Authorization")?.replace("Bearer ", "");
+    if (header !== secret) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
   }
 
   const supabase = createClient(
@@ -20,30 +31,13 @@ serve(async (req) => {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
 
-  const now = new Date().toISOString();
-  let expiredCount = 0;
-  let suspendedCount = 0;
-
-  const { data: expiredSubs } = await supabase
-    .from("subscriptions")
-    .select("id, company_id")
-    .eq("status", "trialing")
-    .lt("trial_ends_at", now)
-    .eq("soft_delete", false);
-
-  for (const sub of expiredSubs ?? []) {
-    await supabase.from("subscriptions").update({ status: "expired" }).eq("id", sub.id);
-    await supabase.from("companies").update({ status: "expired" }).eq("id", sub.company_id);
-    expiredCount++;
-
-    await supabase.from("audit_logs").insert({
-      company_id: sub.company_id,
-      action: "update",
-      entity_type: "subscription",
-      entity_id: sub.id,
-      description: "Trial expired automatically",
-    });
+  const { data: expiredCount, error: expireErr } = await supabase.rpc("expire_due_trials");
+  if (expireErr) {
+    console.error(expireErr);
   }
+
+  const now = new Date().toISOString();
+  let suspendedCount = 0;
 
   const { data: pastDue } = await supabase
     .from("subscriptions")
@@ -52,22 +46,23 @@ serve(async (req) => {
     .eq("soft_delete", false);
 
   for (const sub of pastDue ?? []) {
-    await supabase
+    const { error } = await supabase
       .from("companies")
       .update({ status: "suspended", suspended_at: now })
       .eq("id", sub.company_id)
-      .eq("status", "past_due");
-    suspendedCount++;
+      .in("status", ["active", "trial", "past_due"]);
+    if (!error) suspendedCount++;
   }
 
   await supabase.from("system_logs").insert({
     level: "info",
     source: "subscription-validation",
-    message: `Processed ${expiredCount} expired trials, ${suspendedCount} suspensions`,
-    metadata: { expiredCount, suspendedCount },
+    message: `expire_due_trials=${expiredCount ?? 0}, suspensions=${suspendedCount}`,
+    metadata: { expiredCount: expiredCount ?? 0, suspendedCount },
   });
 
-  return new Response(JSON.stringify({ expiredCount, suspendedCount }), {
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
+  return new Response(
+    JSON.stringify({ expiredCount: expiredCount ?? 0, suspendedCount }),
+    { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+  );
 });

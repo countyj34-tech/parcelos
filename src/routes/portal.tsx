@@ -4,7 +4,8 @@ import { PortalShell } from "@/components/portal/portal-shell";
 import { CompanyAccessGate } from "@/components/company-access-gate";
 import { useAuth } from "@/hooks/use-auth";
 import { useTenantPwaManifest } from "@/hooks/use-tenant-pwa-manifest";
-import { isCustomerPortalMode } from "@/lib/portal-mode";
+import { isCustomerPortalMode, isReceptionRegisterMode } from "@/lib/portal-mode";
+import { getHomeRouteForRole } from "@/lib/roles";
 import { registerServiceWorker } from "@/lib/pwa";
 
 export const Route = createFileRoute("/portal")({
@@ -13,13 +14,14 @@ export const Route = createFileRoute("/portal")({
 
 function PortalLayout() {
   const navigate = useNavigate();
-  const { isAuthenticated, isDemoMode, isPlatformOwner, isCustomer } = useAuth();
+  const { isAuthenticated, isDemoMode, isPlatformOwner, isCustomer, role } = useAuth();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const searchStr = useRouterState({ select: (s) => s.location.searchStr });
   useTenantPwaManifest();
 
   const staffWalkIn =
-    pathname.startsWith("/portal/register") && searchStr.includes("from=reception");
+    pathname.startsWith("/portal/register") &&
+    (searchStr.includes("from=reception") || isReceptionRegisterMode());
   const staffOk = (isAuthenticated || isDemoMode) && !isPlatformOwner && !isCustomer;
   const customerOk = isCustomerPortalMode();
   const allowed = customerOk || staffWalkIn || (staffOk && pathname.startsWith("/portal/register"));
@@ -29,15 +31,19 @@ function PortalLayout() {
   }, []);
 
   useEffect(() => {
-    if (!allowed) {
-      void navigate({ to: "/", replace: true });
+    if (allowed) return;
+    // Staff who wander into portal stay in their workspace — never dump to marketing home
+    if (staffOk) {
+      void navigate({ to: getHomeRouteForRole(role), replace: true });
+      return;
     }
-  }, [allowed, navigate]);
+    void navigate({ to: "/", replace: true });
+  }, [allowed, navigate, role, staffOk]);
 
   if (!allowed) {
     return (
       <div className="grid min-h-svh place-items-center bg-background px-6 text-center">
-        <p className="text-sm text-muted-foreground">Opening company workspace…</p>
+        <p className="text-sm text-muted-foreground">Returning to your workspace…</p>
       </div>
     );
   }

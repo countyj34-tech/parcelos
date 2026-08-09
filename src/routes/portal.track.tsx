@@ -16,7 +16,7 @@ import { ParcelTimeline } from "@/components/portal/parcel-timeline";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { StatusPill } from "@/components/status-pill";
-import { trackParcelPublic } from "@/lib/api/parcels";
+import { trackParcelPublic, fetchParcelTrackingEvents } from "@/lib/api/parcels";
 import { formatParcelStatus } from "@/lib/api/mappers";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { toast } from "sonner";
@@ -69,10 +69,19 @@ function PortalTrack() {
     company: string;
     updatedAt: string;
     live: boolean;
+    events: Array<{ title: string; description: string | null; occurred_at: string; status: string }>;
   } | null>(null);
 
   const timeline = useMemo(() => {
     if (!result?.live) return DEMO_TIMELINE;
+    if (result.events.length) {
+      return result.events.map((ev) => ({
+        label: ev.title || formatParcelStatus(ev.status),
+        icon: Clock,
+        time: formatUpdated(ev.occurred_at),
+        detail: ev.description || `${result.origin} → ${result.destination}`,
+      }));
+    }
     const idx = statusIndex(result.status);
     return DEMO_TIMELINE.map((step, i) => ({
       ...step,
@@ -86,7 +95,11 @@ function PortalTrack() {
     }));
   }, [result]);
 
-  const currentIndex = result?.live ? statusIndex(result.status) : 3;
+  const currentIndex = result?.live
+    ? result.events.length
+      ? Math.max(result.events.length - 1, 0)
+      : statusIndex(result.status)
+    : 3;
   const uiStatus = result ? formatParcelStatus(result.status) : "In Transit";
 
   const onTrack = async (e: React.FormEvent) => {
@@ -103,6 +116,7 @@ function PortalTrack() {
     if (isSupabaseConfigured()) {
       const row = await trackParcelPublic(tracking);
       if (row) {
+        const events = await fetchParcelTrackingEvents(row.tracking_number);
         setResult({
           tracking: row.tracking_number,
           status: row.status,
@@ -111,6 +125,7 @@ function PortalTrack() {
           company: row.company_name,
           updatedAt: row.updated_at,
           live: true,
+          events: events as Array<{ title: string; description: string | null; occurred_at: string; status: string }>,
         });
         setLoading(false);
         return;
@@ -129,6 +144,7 @@ function PortalTrack() {
       company: "Demo",
       updatedAt: new Date().toISOString(),
       live: false,
+      events: [],
     });
     setLoading(false);
   };

@@ -1,101 +1,358 @@
+import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { QrCode, ScanLine, Truck, User } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { Loader2, Plus, QrCode, ScanLine, Truck, User } from "lucide-react";
 import { PageHeader } from "@/components/dashboard/dashboard-shell";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useAuth } from "@/hooks/use-auth";
+import { useBranchNames, useCompanyDispatch, useCompanyStaff, useParcels } from "@/hooks/use-parcels";
+import {
+  assignDriverToParcels,
+  createCompanyVehicle,
+  dispatchParcels,
+  ensureDriverProfile,
+  listCompanyDrivers,
+  setVehicleActive,
+} from "@/lib/api/company-admin";
+import { notifyParcelStakeholders } from "@/lib/api/messaging";
 import { StatusPill } from "@/components/status-pill";
-import { DISPATCH_RUN, PARCELS } from "@/lib/mock-data";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/app/dispatch")({
   head: () => ({ meta: [{ title: "Dispatch — ParcelOS" }] }),
   component: DispatchPage,
 });
 
-const VEHICLES = [
-  { id: "v1", vehicle: "Toyota Hiace • ABZ 4417", driver: "Joseph Kunda", route: "Lusaka → Ndola", capacity: 60, loaded: 38 },
-  { id: "v2", vehicle: "Isuzu NPR • ABL 2291", driver: "Peter Banda", route: "Chipata → Ndola", capacity: 80, loaded: 52 },
-  { id: "v3", vehicle: "Mercedes Sprinter • ACB 8812", driver: "Grace Mwila", route: "Nairobi → Kampala", capacity: 45, loaded: 0 },
-];
-
 function DispatchPage() {
-  const run = DISPATCH_RUN;
+  const { companyId } = useAuth();
+  const queryClient = useQueryClient();
+  const { data, isLoading } = useCompanyDispatch();
+  const { data: pendingParcels = [], refetch } = useParcels({ status: "Received" });
+  const { data: branches = [] } = useBranchNames(companyId);
+  const { data: staff = [] } = useCompanyStaff();
+  const vehicles = data?.vehicles ?? [];
+
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [registration, setRegistration] = useState("");
+  const [make, setMake] = useState("");
+  const [model, setModel] = useState("");
+  const [capacity, setCapacity] = useState("50");
+  const [branchId, setBranchId] = useState("");
+  const [selected, setSelected] = useState<string[]>([]);
+  const [scan, setScan] = useState("");
+  const [drivers, setDrivers] = useState<Array<{ id: string; name: string; available: boolean }>>([]);
+  const [driverId, setDriverId] = useState("");
+  const [vehicleId, setVehicleId] = useState("");
+  const [promoteStaffId, setPromoteStaffId] = useState("");
+
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: ["company-dispatch"] });
+    void queryClient.invalidateQueries({ queryKey: ["parcels"] });
+    void queryClient.invalidateQueries({ queryKey: ["company-dashboard"] });
+    void refetch();
+    void listCompanyDrivers()
+      .then(setDrivers)
+      .catch(() => setDrivers([]));
+  };
+
+  useEffect(() => {
+    void listCompanyDrivers()
+      .then(setDrivers)
+      .catch(() => setDrivers([]));
+  }, []);
+
+  const onAddVehicle = async () => {
+    if (!registration.trim()) {
+      toast.error("Registration number is required");
+      return;
+    }
+    setBusy(true);
+    try {
+      await createCompanyVehicle({
+        registration,
+        make,
+        model,
+        capacityKg: Number(capacity) || 50,
+        branchId: branchId || null,
+      });
+      toast.success("Vehicle added");
+      setOpen(false);
+      setRegistration("");
+      refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not add vehicle");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onPromoteDriver = async () => {
+    if (!promoteStaffId) {
+      toast.error("Pick a staff member");
+      return;
+    }
+    try {
+      const id = await ensureDriverProfile(promoteStaffId);
+      toast.success("Driver profile ready");
+      refresh();
+      setDriverId(id);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not create driver");
+    }
+  };
+
+  const onDispatch = async () => {
+    const ids = selected.length ? selected : pendingParcels.filter((p) => p.id).map((p) => p.id!);
+    if (!ids.length) {
+      toast.error("No parcels to dispatch");
+      return;
+    }
+    setBusy(true);
+    try {
+      if (!companyId) throw new Error("Company not loaded");
+      if (driverId) {
+        await assignDriverToParcels({ parcelIds: ids, driverId, vehicleId: vehicleId || null });
+        toast.success(`Dispatched ${ids.length} parcel(s) to driver`);
+      } else {
+        await dispatchParcels({ parcelIds: ids, companyId });
+        toast.success(`Dispatched ${ids.length} parcel(s)`);
+      }
+      const picked = pendingParcels.filter((p) => p.id && ids.includes(p.id));
+      for (const p of picked) {
+        const phone = p.receiverPhone || p.senderPhone;
+        if (!phone) continue;
+        void notifyParcelStakeholders({
+          companyId,
+          parcelId: p.id,
+          event: "dispatch",
+          phone,
+          message: `Your parcel ${p.tracking} is on the way. Track status in the customer portal.`,
+        });
+      }
+      setSelected([]);
+      refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Dispatch failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onScan = () => {
+    const q = scan.trim().toUpperCase();
+    if (!q) return;
+    const match = pendingParcels.find((p) => p.tracking.toUpperCase().includes(q));
+    if (!match?.id) {
+      toast.message("Parcel not in ready list");
+      return;
+    }
+    setSelected((s) => (s.includes(match.id!) ? s : [...s, match.id!]));
+    setScan("");
+    toast.success(`Loaded ${match.tracking}`);
+  };
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Dispatch" description="Load vehicles and send parcels on the road" actions={<Button className="rounded-xl"><Truck className="mr-2 h-4 w-4" /> New dispatch</Button>} />
-
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Vehicles ready" value={3} icon={Truck} />
-        <StatCard label="Drivers ready" value={4} icon={User} />
-        <StatCard label="Pending dispatch" value={67} icon={ScanLine} accent="#F59E0B" />
-        <StatCard label="Dispatched today" value={9} icon={Truck} accent="#10B981" />
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-3">
-        {VEHICLES.map((v) => (
-          <div key={v.id} className="rounded-2xl border border-border bg-card p-5 shadow-card">
-            <p className="font-semibold">{v.vehicle}</p>
-            <p className="mt-1 text-sm text-muted-foreground">{v.route}</p>
-            <div className="mt-4 flex items-center gap-2 text-sm">
-              <User className="h-4 w-4 text-muted-foreground" />
-              {v.driver}
-            </div>
-            <div className="mt-4">
-              <div className="flex justify-between text-xs text-muted-foreground">
-                <span>{v.loaded} / {v.capacity} parcels</span>
-                <span>{Math.round((v.loaded / v.capacity) * 100)}%</span>
-              </div>
-              <Progress value={(v.loaded / v.capacity) * 100} className="mt-2 h-2" />
-            </div>
-            <Button className="mt-4 w-full rounded-xl" variant={v.loaded > 0 ? "default" : "outline"}>
-              {v.loaded > 0 ? "Dispatch now" : "Start loading"}
+      <PageHeader
+        title="Dispatch"
+        description="Assign drivers, load vehicles, send parcels"
+        actions={
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" className="rounded-xl" onClick={() => setOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" /> Add vehicle
+            </Button>
+            <Button className="rounded-xl" disabled={busy || !pendingParcels.length} onClick={() => void onDispatch()}>
+              <Truck className="mr-2 h-4 w-4" /> Dispatch
             </Button>
           </div>
-        ))}
+        }
+      />
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard label="Vehicles" value={vehicles.length} icon={Truck} />
+        <StatCard label="Drivers" value={drivers.length || (data?.driversReady ?? 0)} icon={User} />
+        <StatCard label="Pending" value={data?.pendingDispatch ?? 0} icon={ScanLine} accent="#F59E0B" />
+        <StatCard label="Dispatched today" value={data?.dispatchedToday ?? 0} icon={Truck} accent="#10B981" />
       </div>
+
+      <div className="grid gap-4 rounded-2xl border border-border bg-card p-5 shadow-card lg:grid-cols-3">
+        <div className="space-y-1.5">
+          <Label>Assign driver</Label>
+          <Select value={driverId || "none"} onValueChange={(v) => setDriverId(v === "none" ? "" : v)}>
+            <SelectTrigger className="rounded-xl">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">No driver (status only)</SelectItem>
+              {drivers.map((d) => (
+                <SelectItem key={d.id} value={d.id}>
+                  {d.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1.5">
+          <Label>Vehicle</Label>
+          <Select value={vehicleId || "none"} onValueChange={(v) => setVehicleId(v === "none" ? "" : v)}>
+            <SelectTrigger className="rounded-xl">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Any</SelectItem>
+              {vehicles.map((v) => (
+                <SelectItem key={v.id} value={v.id}>
+                  {v.registration}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1.5">
+          <Label>Add driver from staff</Label>
+          <div className="flex gap-2">
+            <Select value={promoteStaffId || "none"} onValueChange={(v) => setPromoteStaffId(v === "none" ? "" : v)}>
+              <SelectTrigger className="rounded-xl">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Select staff</SelectItem>
+                {staff.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>
+                    {s.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button variant="outline" className="shrink-0 rounded-xl" onClick={() => void onPromoteDriver()}>
+              Add
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+        </div>
+      ) : null}
+
+      {vehicles.length === 0 ? (
+        <p className="rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+          No vehicles yet. Add a truck or van to start.
+        </p>
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-3">
+          {vehicles.map((v) => (
+            <div key={v.id} className="rounded-2xl border border-border bg-card p-5 shadow-card">
+              <p className="font-semibold">
+                {v.label} · {v.registration}
+              </p>
+              <Progress value={v.active ? 35 : 0} className="mt-4 h-2" />
+              <Button
+                className="mt-4 w-full rounded-xl"
+                variant="outline"
+                onClick={() =>
+                  void setVehicleActive(v.id, !v.active).then(() => {
+                    toast.success(v.active ? "Offline" : "Active");
+                    refresh();
+                  })
+                }
+              >
+                {v.active ? "Set offline" : "Set active"}
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="rounded-2xl border border-border bg-card p-6 shadow-card">
-          <h2 className="text-lg font-semibold">Parcel loading</h2>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <div className="rounded-xl border border-dashed border-border p-6 text-center">
-              <ScanLine className="mx-auto h-8 w-8 text-muted-foreground" />
-              <p className="mt-2 text-sm font-medium">Barcode scanner</p>
-              <Input placeholder="Scan barcode…" className="mt-3 h-11 rounded-xl" />
-            </div>
-            <div className="rounded-xl border border-dashed border-border p-6 text-center">
-              <QrCode className="mx-auto h-8 w-8 text-muted-foreground" />
-              <p className="mt-2 text-sm font-medium">QR scanner</p>
-              <Input placeholder="Scan QR…" className="mt-3 h-11 rounded-xl" />
-            </div>
-          </div>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Button variant="outline" className="rounded-xl">Load parcel</Button>
-            <Button variant="outline" className="rounded-xl">Unload parcel</Button>
-            <Button variant="outline" className="rounded-xl">Transfer parcel</Button>
+          <h2 className="text-lg font-semibold">Scan to load</h2>
+          <div className="mt-4 flex gap-2">
+            <Input
+              value={scan}
+              onChange={(e) => setScan(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), onScan())}
+              placeholder="Scan tracking…"
+              className="h-11 rounded-xl"
+            />
+            <Button className="rounded-xl" onClick={onScan}>
+              <QrCode className="mr-1 h-4 w-4" /> Load
+            </Button>
           </div>
         </div>
-
         <div className="rounded-2xl border border-border bg-card p-6 shadow-card">
-          <h2 className="text-lg font-semibold">Active run · {run.code}</h2>
-          <p className="text-sm text-muted-foreground">{run.route}</p>
-          <div className="mt-4 space-y-2">
-            {PARCELS.slice(0, 4).map((p) => (
-              <div key={p.tracking} className="flex items-center gap-3 rounded-xl border border-border p-3">
-                <Checkbox defaultChecked />
+          <h2 className="text-lg font-semibold">Ready ({selected.length} selected)</h2>
+          <ul className="mt-4 max-h-72 space-y-2 overflow-y-auto">
+            {pendingParcels.map((p) => (
+              <li key={p.tracking} className="flex items-center gap-3 rounded-xl border border-border p-3">
+                <Checkbox
+                  checked={Boolean(p.id && selected.includes(p.id))}
+                  onCheckedChange={(c) => {
+                    if (!p.id) return;
+                    setSelected((s) => (c ? [...s, p.id!] : s.filter((id) => id !== p.id)));
+                  }}
+                />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{p.tracking}</p>
-                  <p className="truncate text-xs text-muted-foreground">{p.destination}</p>
+                  <p className="text-sm font-medium">{p.tracking}</p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {p.origin} → {p.destination}
+                  </p>
                 </div>
                 <StatusPill status={p.status} />
-              </div>
+              </li>
             ))}
-          </div>
+            {!pendingParcels.length ? <li className="text-sm text-muted-foreground">Nothing waiting.</li> : null}
+          </ul>
         </div>
       </div>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add vehicle</DialogTitle>
+            <DialogDescription>Register fleet for dispatch.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3">
+            <div className="space-y-1.5">
+              <Label>Registration</Label>
+              <Input className="rounded-xl" value={registration} onChange={(e) => setRegistration(e.target.value)} />
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Input className="rounded-xl" placeholder="Make" value={make} onChange={(e) => setMake(e.target.value)} />
+              <Input className="rounded-xl" placeholder="Model" value={model} onChange={(e) => setModel(e.target.value)} />
+            </div>
+            <Input className="rounded-xl" placeholder="Capacity kg" value={capacity} onChange={(e) => setCapacity(e.target.value)} />
+          </div>
+          <DialogFooter>
+            <Button className="rounded-xl" disabled={busy} onClick={() => void onAddVehicle()}>
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

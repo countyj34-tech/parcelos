@@ -1,4 +1,4 @@
-import type { Parcel, ParcelStatus } from "@/lib/mock-data";
+import type { Parcel, ParcelStatus } from "@/lib/types/parcel";
 import type { ParcelPaymentStatus, ParcelStatusCode } from "@/backend/database/types";
 
 export const STATUS_TO_UI: Record<ParcelStatusCode, ParcelStatus> = {

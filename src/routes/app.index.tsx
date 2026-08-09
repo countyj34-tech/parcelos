@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   Banknote,
   CalendarClock,
+  Loader2,
   PackageCheck,
   PackagePlus,
   PackageSearch,
@@ -19,8 +20,9 @@ import { ProductMeta } from "@/components/logo";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
 import { useTenant } from "@/hooks/use-tenant";
-import { ACTIVITIES, DASHBOARD_STATS, PARCELS } from "@/lib/mock-data";
+import { useCompanyDashboard } from "@/hooks/use-parcels";
 import { StatusPill } from "@/components/status-pill";
+import { isSupabaseConfigured } from "@/lib/supabase/config";
 
 export const Route = createFileRoute("/app/")({
   head: () => ({ meta: [{ title: ProductMeta("Dashboard") }] }),
@@ -30,7 +32,7 @@ export const Route = createFileRoute("/app/")({
 function DashboardHome() {
   const { user, role } = useAuth();
   const { tenant } = useTenant();
-  const s = DASHBOARD_STATS;
+  const { data: stats, isLoading } = useCompanyDashboard();
   const isReceptionist = role === "Receptionist";
   const canShare = role === "Company Admin" || role === "Branch Manager" || role === "Super Admin";
 
@@ -42,7 +44,9 @@ function DashboardHome() {
           description={user.branch}
           actions={
             <Button asChild size="lg" className="h-12 rounded-xl px-6">
-              <Link to="/app/reception"><PackagePlus className="mr-2 h-5 w-5" /> Open reception</Link>
+              <Link to="/app/reception">
+                <PackagePlus className="mr-2 h-5 w-5" /> Open reception
+              </Link>
             </Button>
           }
         />
@@ -54,7 +58,10 @@ function DashboardHome() {
             { label: "Print labels", to: "/app/reception", icon: Printer },
           ].map((a) => (
             <Button key={a.label} asChild variant="outline" className="h-16 justify-start rounded-2xl text-base">
-              <Link to={a.to}><a.icon className="mr-3 h-5 w-5" />{a.label}</Link>
+              <Link to={a.to}>
+                <a.icon className="mr-3 h-5 w-5" />
+                {a.label}
+              </Link>
             </Button>
           ))}
         </div>
@@ -62,9 +69,30 @@ function DashboardHome() {
     );
   }
 
+  const s = stats ?? {
+    todayParcels: 0,
+    waitingDropOff: 0,
+    inStock: 0,
+    inTransit: 0,
+    readyCollection: 0,
+    deliveredToday: 0,
+    revenueToday: "ZMW 0",
+    statusBreakdown: [],
+    recentParcels: [],
+  };
+
   return (
     <div className="space-y-8">
-      <PageHeader title={`Good morning, ${user.name.split(" ")[0]}`} description="Today's operations at a glance" />
+      <PageHeader
+        title={`Hello, ${user.name.split(" ")[0]}`}
+        description={
+          isLoading
+            ? "Loading live operations…"
+            : isSupabaseConfigured()
+              ? "Live operations for your company"
+              : "Connect Supabase to see live data"
+        }
+      />
 
       {canShare ? (
         <section className="card-elevated overflow-hidden p-5 sm:p-6">
@@ -86,7 +114,12 @@ function DashboardHome() {
         </section>
       ) : null}
 
-      {/* Top stats */}
+      {isLoading ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" /> Syncing dashboard…
+        </div>
+      ) : null}
+
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
         <StatCard label="Today's parcels" value={s.todayParcels} icon={PackagePlus} />
         <StatCard label="Waiting drop-off" value={s.waitingDropOff} icon={CalendarClock} accent="#3B82F6" />
@@ -97,67 +130,60 @@ function DashboardHome() {
         <StatCard label="Today's revenue" value={s.revenueToday} icon={Banknote} className="xl:col-span-1" />
       </div>
 
-      {/* Status overview */}
       <section>
         <h2 className="mb-4 text-lg font-semibold">Parcel status overview</h2>
         <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
-          {s.statusBreakdown.map((st) => (
-            <StatusCard key={st.label} label={st.label} count={st.count} color={st.color} />
-          ))}
+          {s.statusBreakdown.length ? (
+            s.statusBreakdown.map((st) => (
+              <StatusCard key={st.label} label={st.label} count={st.count} color={st.color} />
+            ))
+          ) : (
+            <p className="col-span-full text-sm text-muted-foreground">No parcels yet — register the first one at reception.</p>
+          )}
         </div>
       </section>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        {/* Latest activity */}
         <section className="rounded-2xl border border-border bg-card p-6 shadow-card">
           <h2 className="text-lg font-semibold">Latest parcel activity</h2>
           <ul className="mt-4 space-y-3">
-            {PARCELS.slice(0, 5).map((p) => (
-              <li key={p.tracking} className="flex items-center justify-between gap-3 rounded-xl border border-border p-3">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold">{p.tracking}</p>
-                  <p className="truncate text-xs text-muted-foreground">{p.sender} → {p.receiver}</p>
-                </div>
-                <StatusPill status={p.status} />
-              </li>
-            ))}
+            {s.recentParcels.length ? (
+              s.recentParcels.map((p) => (
+                <li key={p.tracking} className="flex items-center justify-between gap-3 rounded-xl border border-border p-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold">{p.tracking}</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {p.sender} → {p.receiver}
+                    </p>
+                  </div>
+                  <StatusPill status={p.status} />
+                </li>
+              ))
+            ) : (
+              <li className="text-sm text-muted-foreground">No activity yet.</li>
+            )}
           </ul>
         </section>
 
-        {/* Staff activity */}
         <section className="rounded-2xl border border-border bg-card p-6 shadow-card">
-          <h2 className="text-lg font-semibold">Today's staff activity</h2>
-          <ul className="mt-4 space-y-4">
-            {ACTIVITIES.map((a) => (
-              <li key={a.what} className="flex gap-3">
-                <span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-primary" />
-                <div>
-                  <p className="text-sm"><span className="font-semibold">{a.who}</span> <span className="text-muted-foreground">{a.what}</span></p>
-                  <p className="text-xs text-muted-foreground">{a.when}</p>
-                </div>
-              </li>
+          <h2 className="text-lg font-semibold">Quick actions</h2>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            {[
+              { label: "Register walk-in", to: "/app/reception/register", icon: UserPlus },
+              { label: "Search parcel", to: "/app/parcels", icon: Search },
+              { label: "Reception desk", to: "/app/reception", icon: PackagePlus },
+              { label: "Dispatch", to: "/app/dispatch", icon: Truck },
+            ].map((a) => (
+              <Button key={a.label} asChild variant="outline" className="h-14 rounded-2xl">
+                <Link to={a.to}>
+                  <a.icon className="mr-2 h-4 w-4" />
+                  {a.label}
+                </Link>
+              </Button>
             ))}
-          </ul>
+          </div>
         </section>
       </div>
-
-      {/* Quick actions */}
-      <section>
-        <h2 className="mb-4 text-lg font-semibold">Quick actions</h2>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          {[
-            { label: "Register walk-in", to: "/app/reception", icon: UserPlus },
-            { label: "Search parcel", to: "/app/parcels", icon: Search },
-            { label: "Receive parcel", to: "/app/reception", icon: PackagePlus },
-            { label: "Dispatch vehicle", to: "/app/dispatch", icon: Truck },
-            { label: "Print labels", to: "/app/reception", icon: Printer },
-          ].map((a) => (
-            <Button key={a.label} asChild variant="outline" className="h-14 rounded-2xl">
-              <Link to={a.to}><a.icon className="mr-2 h-4 w-4" />{a.label}</Link>
-            </Button>
-          ))}
-        </div>
-      </section>
     </div>
   );
 }

@@ -1,10 +1,12 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { ArrowRight, Building2, Palette, Share2, Users } from "lucide-react";
 import { FadeIn } from "@/components/motion/fade-in";
 import { SecretLogoTap } from "@/components/secret-logo-tap";
 import { Button } from "@/components/ui/button";
 import { PLATFORM_OWNER, PRODUCT_NAME } from "@/lib/brand";
 import { clearCustomerPortalMode } from "@/lib/portal-mode";
+import { useAuth } from "@/hooks/use-auth";
+import { getHomeRouteForRole } from "@/lib/roles";
 import { useEffect } from "react";
 
 const HERO_IMAGE = "/images/hero-courier-ops.jpg";
@@ -26,12 +28,31 @@ export const Route = createFileRoute("/")({
 /**
  * Company app home (PWA install + first open).
  * Customers never land here — they use /c/{slug} shared by the company.
- * Super Admin unlock remains on the logo tap sequence.
+ * Logged-in staff are sent back to their role workspace.
  */
 function CompanyHome() {
+  const navigate = useNavigate();
+  const { isAuthenticated, isDemoMode, isPlatformOwner, isCustomer, role, isLoading } = useAuth();
+
   useEffect(() => {
     clearCustomerPortalMode();
   }, []);
+
+  useEffect(() => {
+    if (isLoading) return;
+    if (isPlatformOwner) {
+      void navigate({ to: "/admin", replace: true });
+      return;
+    }
+    if (isCustomer) {
+      void navigate({ to: "/portal", replace: true });
+      return;
+    }
+    // Demo mode is always "authenticated" — only bounce real sessions into the desk
+    if (isAuthenticated && !isDemoMode) {
+      void navigate({ to: getHomeRouteForRole(role), replace: true });
+    }
+  }, [isAuthenticated, isCustomer, isDemoMode, isLoading, isPlatformOwner, navigate, role]);
 
   return (
     <div className="relative flex min-h-dvh flex-col overflow-hidden">
@@ -95,8 +116,8 @@ function CompanyHome() {
 
         <div className="mt-8 flex flex-col gap-3">
           <Button asChild size="lg" className="h-14 rounded-2xl bg-teal-600 text-base font-semibold text-white hover:bg-teal-500">
-            <Link to="/login">
-              Sign in &amp; create your brand <ArrowRight className="ml-2 h-4 w-4" />
+            <Link to="/signup">
+              Create account <ArrowRight className="ml-2 h-4 w-4" />
             </Link>
           </Button>
           <Button

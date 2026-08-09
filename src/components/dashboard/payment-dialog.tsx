@@ -13,7 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { money } from "@/lib/mock-data";
+import { money } from "@/lib/money";
 import { Printer } from "lucide-react";
 
 type PaymentDialogProps = {

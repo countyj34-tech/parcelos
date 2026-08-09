@@ -1,7 +1,7 @@
 import { getSupabase } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { mapDbParcelToUi, type DbParcelRow } from "@/lib/api/mappers";
-import { PARCELS, type Parcel } from "@/lib/mock-data";
+import { UI_PAYMENT_TO_DB, UI_STATUS_TO_DB, type Parcel, type ParcelStatus } from "@/lib/types/parcel";
 
 const PARCEL_SELECT = `
   id,
@@ -29,12 +29,14 @@ export type ParcelFilters = {
 };
 
 export async function fetchParcels(filters: ParcelFilters = {}): Promise<Parcel[]> {
-  if (!isSupabaseConfigured()) return filterMockParcels(filters);
+  if (!isSupabaseConfigured()) return [];
 
   const supabase = getSupabase();
   if (!supabase) return [];
 
-  const { data: { session } } = await supabase.auth.getSession();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
   if (!session) return [];
 
   let query = supabase
@@ -42,12 +44,23 @@ export async function fetchParcels(filters: ParcelFilters = {}): Promise<Parcel[
     .select(PARCEL_SELECT)
     .eq("soft_delete", false)
     .order("created_at", { ascending: false })
-    .limit(100);
+    .limit(150);
 
-  if (filters.search) {
+  if (filters.search?.trim()) {
+    const s = filters.search.trim();
     query = query.or(
-      `tracking_number.ilike.%${filters.search}%,sender_name.ilike.%${filters.search}%,receiver_name.ilike.%${filters.search}%`,
+      `tracking_number.ilike.%${s}%,sender_name.ilike.%${s}%,receiver_name.ilike.%${s}%,sender_phone.ilike.%${s}%`,
     );
+  }
+
+  if (filters.status && filters.status !== "all") {
+    const codes = UI_STATUS_TO_DB[filters.status as ParcelStatus];
+    if (codes?.length) query = query.in("status", codes);
+  }
+
+  if (filters.payment && filters.payment !== "all") {
+    const code = UI_PAYMENT_TO_DB[filters.payment as Parcel["payment"]];
+    if (code) query = query.eq("payment_status", code);
   }
 
   const { data, error } = await query;
@@ -60,31 +73,12 @@ export async function fetchParcels(filters: ParcelFilters = {}): Promise<Parcel[
   if (!data?.length) return [];
 
   const mapped = (data as unknown as DbParcelRow[]).map(mapDbParcelToUi);
-  return applyClientFilters(mapped, filters);
-}
-
-function filterMockParcels(filters: ParcelFilters): Parcel[] {
-  return applyClientFilters(PARCELS, filters);
-}
-
-function applyClientFilters(parcels: Parcel[], filters: ParcelFilters): Parcel[] {
-  return parcels.filter(
-    (p) =>
-      (!filters.status || filters.status === "all" || p.status === filters.status) &&
-      (!filters.branch || filters.branch === "all" || p.branch === filters.branch) &&
-      (!filters.payment || filters.payment === "all" || p.payment === filters.payment) &&
-      (!filters.search ||
-        [p.tracking, p.sender, p.receiver, p.destination]
-          .join(" ")
-          .toLowerCase()
-          .includes(filters.search.toLowerCase())),
-  );
+  if (!filters.branch || filters.branch === "all") return mapped;
+  return mapped.filter((p) => p.branch === filters.branch || p.origin === filters.branch);
 }
 
 export async function fetchParcelByTracking(tracking: string): Promise<Parcel | null> {
-  if (!isSupabaseConfigured()) {
-    return PARCELS.find((p) => p.tracking === tracking) ?? null;
-  }
+  if (!isSupabaseConfigured()) return null;
 
   const supabase = getSupabase();
   if (!supabase) return null;
@@ -110,12 +104,7 @@ export async function searchReceptionParcels(
   const q = query.trim();
   if (!q) return [];
 
-  if (!isSupabaseConfigured()) {
-    return PARCELS.filter((p) => {
-      if (mode === "phone") return p.senderPhone.includes(q) || p.receiverPhone.includes(q);
-      return p.tracking.toLowerCase().includes(q.toLowerCase());
-    }).slice(0, 10);
-  }
+  if (!isSupabaseConfigured()) return [];
 
   const supabase = getSupabase();
   if (!supabase) return [];
@@ -171,6 +160,37 @@ export async function finalizeReceptionPayment(
     .eq("id", input.parcelId);
 
   if (parcelError) return { ok: false, error: parcelError.message };
+
+  await supabase.from("parcel_tracking").insert({
+    company_id: input.companyId,
+    parcel_id: input.parcelId,
+    status: "received",
+    title: "Received",
+    description: "Verified and paid at the counter.",
+    occurred_at: new Date().toISOString(),
+    is_public: true,
+  });
+
+  const { data: parcelRow } = await supabase
+    .from("parcels")
+    .select("tracking_number, sender_phone, receiver_phone")
+    .eq("id", input.parcelId)
+    .maybeSingle();
+
+  if (parcelRow) {
+    const { notifyParcelStakeholders } = await import("@/lib/api/messaging");
+    const msg = `Parcel ${parcelRow.tracking_number} received at counter. Track updates in your portal.`;
+    for (const phone of [parcelRow.sender_phone, parcelRow.receiver_phone]) {
+      if (!phone) continue;
+      void notifyParcelStakeholders({
+        companyId: input.companyId,
+        parcelId: input.parcelId,
+        event: "receive",
+        phone,
+        message: msg,
+      });
+    }
+  }
 
   const { error: payError } = await supabase.from("payments").insert({
     company_id: input.companyId,
@@ -301,6 +321,38 @@ export async function createGuestParcel(input: CreateGuestParcelInput): Promise<
     console.warn("[createGuestParcel]", error?.message);
     return null;
   }
+
+  // Keep customers directory live for multi-company scale
+  const phone = input.senderPhone.trim();
+  if (phone) {
+    const { data: existing } = await supabase
+      .from("customers")
+      .select("id")
+      .eq("company_id", input.companyId)
+      .eq("phone", phone)
+      .eq("soft_delete", false)
+      .maybeSingle();
+
+    if (!existing) {
+      await supabase.from("customers").insert({
+        company_id: input.companyId,
+        full_name: input.senderName,
+        phone,
+        email: input.senderEmail || null,
+        is_guest: true,
+      });
+    }
+  }
+
+  await supabase.from("parcel_tracking").insert({
+    company_id: input.companyId,
+    parcel_id: data.id,
+    status: "waiting_for_dropoff",
+    title: "Waiting for Drop-off",
+    description: "Parcel registered — bring it to the branch for weighing and payment.",
+    occurred_at: new Date().toISOString(),
+    is_public: true,
+  });
 
   return { id: data.id as string, trackingNumber: data.tracking_number as string };
 }

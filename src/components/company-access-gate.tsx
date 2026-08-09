@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
-import { ShieldOff } from "lucide-react";
+import { Link, useRouterState } from "@tanstack/react-router";
+import { CreditCard, ShieldOff } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
 import { useTenant } from "@/hooks/use-tenant";
+import { fetchCompanyBilling } from "@/lib/api/billing";
 import { isCompanyLockedRemote } from "@/lib/api/tenant";
 import {
   getEffectiveCompanyStatus,
@@ -11,13 +14,20 @@ import {
 import { getCompanyBySlug } from "@/lib/platform-data";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 
-/** Blocks company staff app + customer portal when paused/suspended. */
+const BILLING_ESCAPE = ["/app/subscription", "/app/support", "/login", "/signup"];
+
+/** Blocks company staff app + customer portal when paused/suspended/expired — allows billing escape hatch. */
 export function CompanyAccessGate({ children }: { children: React.ReactNode }) {
   const { tenant } = useTenant();
-  const { isPlatformOwner } = useAuth();
+  const { isPlatformOwner, role } = useAuth();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
   const [blocked, setBlocked] = useState(false);
   const [statusLabel, setStatusLabel] = useState("Suspended");
+  const [daysLeft, setDaysLeft] = useState<number | null>(null);
   const [ready, setReady] = useState(!isSupabaseConfigured());
+
+  const onBillingPath = BILLING_ESCAPE.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+  const canPay = role === "Company Admin" || role === "Branch Manager" || role === "Finance";
 
   useEffect(() => {
     if (isPlatformOwner) {
@@ -39,15 +49,32 @@ export function CompanyAccessGate({ children }: { children: React.ReactNode }) {
     };
 
     const checkRemote = async () => {
-      // UUID from Supabase; demo ids are not UUIDs
       const looksLikeUuid = /^[0-9a-f-]{36}$/i.test(tenant.id);
       if (looksLikeUuid) {
-        const locked = await isCompanyLockedRemote(tenant.id);
-        if (!cancelled && locked != null) {
-          setBlocked(locked);
-          setStatusLabel(locked ? "Suspended" : "Active");
-          setReady(true);
-          return;
+        const [locked, billing] = await Promise.all([
+          isCompanyLockedRemote(tenant.id),
+          fetchCompanyBilling(),
+        ]);
+        if (!cancelled) {
+          if (billing) {
+            setDaysLeft(billing.daysLeft);
+            setStatusLabel(
+              billing.locked
+                ? billing.companyStatus === "trial"
+                  ? "Expired"
+                  : billing.companyStatus
+                : billing.companyStatus,
+            );
+            setBlocked(billing.locked);
+            setReady(true);
+            return;
+          }
+          if (locked != null) {
+            setBlocked(locked);
+            setStatusLabel(locked ? "Suspended" : "Active");
+            setReady(true);
+            return;
+          }
         }
       }
       checkLocal();
@@ -73,7 +100,7 @@ export function CompanyAccessGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (isPlatformOwner || !blocked) {
+  if (isPlatformOwner || !blocked || (onBillingPath && canPay)) {
     return <>{children}</>;
   }
 
@@ -89,9 +116,21 @@ export function CompanyAccessGate({ children }: { children: React.ReactNode }) {
           {tenant.name} is {label}
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          This company workspace is temporarily unavailable. If you are a customer, contact the branch. If you run this
-          company, settle your subscription or contact {tenant.supportEmail || "support"}.
+          Your 14-day free trial ended or the subscription is inactive. Pay with Mobile Money (GenesysPay) to reopen the
+          portal for your customers.
         </p>
+        {daysLeft === 0 ? (
+          <p className="mt-2 text-xs text-muted-foreground">Trial ended — subscribe to reopen the desk.</p>
+        ) : null}
+        {canPay ? (
+          <Button asChild className="mt-6 rounded-xl">
+            <Link to="/app/subscription">
+                <CreditCard className="mr-2 h-4 w-4" /> Pay with Mobile Money
+            </Link>
+          </Button>
+        ) : (
+          <p className="mt-6 text-sm text-muted-foreground">Ask your company admin to renew on Subscription.</p>
+        )}
         <p className="mt-6 text-xs text-muted-foreground">Status: {statusLabel}</p>
       </div>
     </div>

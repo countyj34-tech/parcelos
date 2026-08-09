@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
 import { Loader2, PackagePlus, Printer, Search, Wallet } from "lucide-react";
 import { PageHeader } from "@/components/dashboard/dashboard-shell";
 import { Button } from "@/components/ui/button";
@@ -22,7 +23,8 @@ import {
 } from "@/lib/api/parcels";
 import { money } from "@/lib/money";
 import { printParcelReceipts } from "@/lib/print-receipts";
-import type { Parcel } from "@/lib/mock-data";
+import { clearReceptionRegisterMode } from "@/lib/portal-mode";
+import type { Parcel } from "@/lib/types/parcel";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -41,6 +43,12 @@ const METHOD_LABELS: Record<string, string> = {
 function ReceptionPage() {
   const { companyId } = useAuth();
   const { tenant } = useTenant();
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    clearReceptionRegisterMode();
+  }, []);
+
   const [query, setQuery] = useState("");
   const [mode, setMode] = useState<ReceptionSearchMode>("tracking");
   const [searching, setSearching] = useState(false);
@@ -93,8 +101,13 @@ function ReceptionPage() {
 
     setSaving(true);
     const company = companyId || tenant.id;
+    if (!parcel.id || !/^[0-9a-f-]{36}$/i.test(parcel.id) || !/^[0-9a-f-]{36}$/i.test(company)) {
+      toast.error("This parcel is not linked to the live database yet");
+      setSaving(false);
+      return;
+    }
     const result = await finalizeReceptionPayment({
-      parcelId: parcel.id ?? "",
+      parcelId: parcel.id,
       companyId: company,
       feeMajor: feeNum,
       methodType: method,
@@ -106,6 +119,12 @@ function ReceptionPage() {
       toast.error(result.error ?? "Could not save payment");
       return;
     }
+
+    void queryClient.invalidateQueries({ queryKey: ["parcels"] });
+    void queryClient.invalidateQueries({ queryKey: ["company-dashboard"] });
+    void queryClient.invalidateQueries({ queryKey: ["company-payments"] });
+    void queryClient.invalidateQueries({ queryKey: ["company-customers"] });
+    void queryClient.invalidateQueries({ queryKey: ["company-branches"] });
 
     const updated = {
       ...parcel,

@@ -51,7 +51,16 @@ enable_anonymous_sign_ins = false
 [auth.email]
 enable_signup = true
 double_confirm_changes = true
+# Keep true for production SaaS — signup stores company in user_metadata until first login
 enable_confirmations = true
 
 [edge_runtime]
 enabled = true
+
+# Deploy & schedule (hosted):
+#   supabase functions deploy create-genesyspay-checkout genesyspay-webhook send-sms subscription-validation
+#   Cron subscription-validation hourly with header x-cron-secret = CRON_SECRET
+# Secrets:
+#   GENESYSPAY_PUBLIC_KEY, GENESYSPAY_PRIVATE_KEY, GENESYSPAY_WEBHOOK_SECRET
+#   APP_URL (e.g. https://your-app.lovable.app)
+#   CRON_SECRET, AT_*/TWILIO_* (company customer SMS — optional)

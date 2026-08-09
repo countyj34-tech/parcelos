@@ -3,6 +3,7 @@ import type { Session, User } from "@supabase/supabase-js";
 import { getSupabase } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { demoProfile, loadAuthProfile, type AuthProfile } from "@/lib/auth/load-profile";
+import { registerCourierCompany } from "@/lib/api/signup";
 import { type UserRole, ROLE_USERS, getHomeRouteForRole } from "@/lib/roles";
 
 const DEMO_ROLE_KEY = "parcelos-role";
@@ -24,6 +25,7 @@ type AuthContextValue = {
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ error?: string }>;
   setDemoRole: (role: UserRole) => void;
+  refreshProfileAfterAuth: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -42,6 +44,28 @@ function readDemoRole(): UserRole {
   return "Company Admin";
 }
 
+/** After email confirmation / first login — finish company provisioning from signup metadata. */
+async function ensureCompanyWorkspace(session: Session, profile: AuthProfile): Promise<AuthProfile> {
+  if (profile.isPlatformOwner || profile.isCustomer || profile.companyId) return profile;
+
+  const meta = session.user.user_metadata ?? {};
+  const companyName = typeof meta.company_name === "string" ? meta.company_name.trim() : "";
+  if (!companyName) return profile;
+
+  try {
+    await registerCourierCompany({
+      companyName,
+      fullName: typeof meta.full_name === "string" ? meta.full_name : profile.fullName,
+      email: session.user.email ?? profile.email,
+      phone: typeof meta.phone === "string" ? meta.phone : undefined,
+    });
+    return await loadAuthProfile(session);
+  } catch (err) {
+    console.error("[AuthProvider] register company failed:", err);
+    return profile;
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const isDemoMode = !isSupabaseConfigured();
   const [session, setSession] = useState<Session | null>(null);
@@ -53,12 +77,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refreshProfile = useCallback(async (nextSession: Session) => {
     try {
-      const loaded = await loadAuthProfile(nextSession);
+      let loaded = await loadAuthProfile(nextSession);
+      loaded = await ensureCompanyWorkspace(nextSession, loaded);
       setProfile(loaded);
+      return loaded;
     } catch (err) {
       console.error("[AuthProvider] profile load failed:", err);
+      return null;
     }
   }, []);
+
+  const refreshProfileAfterAuth = useCallback(async () => {
+    const supabase = getSupabase();
+    if (!supabase) return;
+    const { data } = await supabase.auth.getSession();
+    if (data.session) {
+      setSession(data.session);
+      setUser(data.session.user);
+      await refreshProfile(data.session);
+    }
+  }, [refreshProfile]);
 
   useEffect(() => {
     if (isDemoMode) {
@@ -79,7 +117,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       else setIsLoading(false);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, s) => {
       setSession(s);
       setUser(s?.user ?? null);
       if (s) void refreshProfile(s);
@@ -89,27 +129,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, [isDemoMode, refreshProfile]);
 
-  const signIn = useCallback(async (email: string, password: string) => {
-    if (isDemoMode) {
-      return { redirect: "/app", error: "Configure Supabase to use real authentication" };
-    }
+  const signIn = useCallback(
+    async (email: string, password: string) => {
+      if (isDemoMode) {
+        return { redirect: "/app", error: "Configure Supabase to use real authentication" };
+      }
 
-    const supabase = getSupabase();
-    if (!supabase) return { redirect: "/login", error: "Supabase not available" };
+      const supabase = getSupabase();
+      if (!supabase) return { redirect: "/login", error: "Supabase not available" };
 
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) return { redirect: "/login", error: error.message };
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) return { redirect: "/login", error: error.message };
 
-    if (data.session) {
-      const loaded = await loadAuthProfile(data.session);
-      setProfile(loaded);
-      if (loaded.isPlatformOwner) return { redirect: "/admin" };
-      if (loaded.isCustomer) return { redirect: "/portal/history" };
-      return { redirect: getHomeRouteForRole(loaded.role) };
-    }
+      if (data.session) {
+        const loaded = await refreshProfile(data.session);
+        if (!loaded) return { redirect: "/app/onboarding" };
+        if (loaded.isPlatformOwner) return { redirect: "/admin" };
+        if (loaded.isCustomer) return { redirect: "/portal/history" };
+        if (!loaded.companyId) return { redirect: "/app/onboarding" };
+        return { redirect: getHomeRouteForRole(loaded.role) };
+      }
 
-    return { redirect: "/app" };
-  }, [isDemoMode]);
+      return { redirect: "/app" };
+    },
+    [isDemoMode, refreshProfile],
+  );
 
   const signOut = useCallback(async () => {
     if (isDemoMode) {
@@ -174,8 +218,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signOut,
       resetPassword,
       setDemoRole,
+      refreshProfileAfterAuth,
     }),
-    [session, isLoading, isDemoMode, profile, role, signIn, signOut, resetPassword, setDemoRole],
+    [
+      session,
+      isLoading,
+      isDemoMode,
+      profile,
+      role,
+      signIn,
+      signOut,
+      resetPassword,
+      setDemoRole,
+      refreshProfileAfterAuth,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

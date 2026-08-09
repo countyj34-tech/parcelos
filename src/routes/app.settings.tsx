@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useRef, useState } from "react";
-import { ImagePlus, Trash2, Upload } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ImagePlus, Loader2, Trash2, Upload } from "lucide-react";
 import { PageHeader } from "@/components/dashboard/dashboard-shell";
 import { SharePortalPanel } from "@/components/dashboard/share-portal-panel";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/hooks/use-auth";
 import { useTenant } from "@/hooks/use-tenant";
 import { updateCompanyBrand, uploadCompanyLogo } from "@/lib/api/company-brand";
+import { fetchMessagingSettings, updateMessagingSettings } from "@/lib/api/company-admin";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/app/settings")({
@@ -140,6 +141,114 @@ function BrandingEditor() {
         }}
       >
         Save branding
+      </Button>
+    </div>
+  );
+}
+
+function MessagingSettingsPanel() {
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [smsEnabled, setSmsEnabled] = useState(true);
+  const [whatsappEnabled, setWhatsappEnabled] = useState(false);
+  const [notifyOnReceive, setNotifyOnReceive] = useState(true);
+  const [notifyOnDispatch, setNotifyOnDispatch] = useState(true);
+  const [notifyOnReady, setNotifyOnReady] = useState(true);
+  const [smsSenderId, setSmsSenderId] = useState("");
+  const [whatsappNumber, setWhatsappNumber] = useState("");
+
+  useEffect(() => {
+    void fetchMessagingSettings()
+      .then((s) => {
+        if (!s) return;
+        setSmsEnabled(s.smsEnabled);
+        setWhatsappEnabled(s.whatsappEnabled);
+        setNotifyOnReceive(s.notifyOnReceive);
+        setNotifyOnDispatch(s.notifyOnDispatch);
+        setNotifyOnReady(s.notifyOnReady);
+        setSmsSenderId(s.smsSenderId);
+        setWhatsappNumber(s.whatsappNumber);
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  const onSave = async () => {
+    setSaving(true);
+    try {
+      await updateMessagingSettings({
+        smsEnabled,
+        whatsappEnabled,
+        smsSenderId,
+        whatsappNumber,
+        notifyOnReceive,
+        notifyOnDispatch,
+        notifyOnReady,
+      });
+      toast.success("Messaging settings saved");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not save");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" /> Loading messaging…
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <p className="mb-4 text-sm text-muted-foreground">
+        Customer alerts go through Africa&apos;s Talking or Twilio (set secrets on Supabase Edge Functions).
+        Without keys, messages are logged for ops visibility.
+      </p>
+      <div className="divide-y divide-border">
+        {(
+          [
+            ["SMS channel", "Send text updates to sender/receiver phones", smsEnabled, setSmsEnabled],
+            ["WhatsApp channel", "Use WhatsApp Business via Twilio when available", whatsappEnabled, setWhatsappEnabled],
+            ["On parcel received", "Notify at intake / counter registration", notifyOnReceive, setNotifyOnReceive],
+            ["On dispatch", "Notify when handed to a driver", notifyOnDispatch, setNotifyOnDispatch],
+            ["On ready for collection", "Notify when parcel arrives at destination", notifyOnReady, setNotifyOnReady],
+          ] as const
+        ).map(([title, desc, on, setOn]) => (
+          <div key={title} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 py-4">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">{title}</p>
+              <p className="text-xs text-muted-foreground">{desc}</p>
+            </div>
+            <Switch checked={on} onCheckedChange={setOn} />
+          </div>
+        ))}
+      </div>
+      <div className="mt-5 grid gap-5 sm:grid-cols-2">
+        <div className="space-y-2">
+          <Label>SMS sender ID</Label>
+          <Input
+            value={smsSenderId}
+            onChange={(e) => setSmsSenderId(e.target.value)}
+            placeholder="e.g. PARCELOS"
+            className="h-11 rounded-xl"
+            maxLength={11}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>WhatsApp business number</Label>
+          <Input
+            value={whatsappNumber}
+            onChange={(e) => setWhatsappNumber(e.target.value)}
+            placeholder="+260…"
+            className="h-11 rounded-xl"
+          />
+        </div>
+      </div>
+      <Button className="mt-6 rounded-full" disabled={saving} onClick={() => void onSave()}>
+        {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+        Save messaging
       </Button>
     </div>
   );
@@ -285,32 +394,7 @@ function SettingsPage() {
         </TabsContent>
 
         <TabsContent value="messaging" className="card-elevated mt-5 p-6">
-          <div className="divide-y divide-border">
-            {[
-              ["SMS on parcel received", "Sender and receiver notified at intake", true],
-              ["SMS on ready for collection", "Receiver notified when parcel arrives", true],
-              ["WhatsApp updates", "Rich tracking link via WhatsApp Business API", true],
-              ["Daily branch summary", "Manager receives an end-of-day SMS", false],
-            ].map(([t, d, on]) => (
-              <div key={t as string} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 py-4">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium">{t}</p>
-                  <p className="text-xs text-muted-foreground">{d}</p>
-                </div>
-                <Switch defaultChecked={on as boolean} />
-              </div>
-            ))}
-          </div>
-          <div className="mt-5 grid gap-5 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label>SMS sender ID</Label>
-              <Input defaultValue="SWIFT" className="h-11 rounded-xl" />
-            </div>
-            <div className="space-y-2">
-              <Label>WhatsApp business number</Label>
-              <Input defaultValue="+260 211 234 599" className="h-11 rounded-xl" />
-            </div>
-          </div>
+          <MessagingSettingsPanel />
         </TabsContent>
 
         <TabsContent value="operations" className="card-elevated mt-5 p-6">

@@ -15,7 +15,10 @@
     "format": "prettier --write .",
     "db:types": "supabase gen types typescript --local > src/backend/database/schema.types.ts",
     "db:reset": "supabase db reset",
-    "functions:serve": "supabase functions serve"
+    "functions:serve": "supabase functions serve",
+    "cap:sync": "npx cap sync",
+    "cap:ios": "npx cap open ios",
+    "cap:android": "npx cap open android"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

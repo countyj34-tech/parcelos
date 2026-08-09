@@ -72,11 +72,14 @@ export function TenantHeader({
   transparent = false,
   wide = false,
   compact = false,
+  homeTo = "/portal",
 }: {
   minimal?: boolean;
   transparent?: boolean;
   wide?: boolean;
   compact?: boolean;
+  /** Where brand name navigates — reception walk-in should stay on desk. */
+  homeTo?: "/portal" | "/app/reception" | "/app";
 }) {
   const { tenant } = useTenant();
   const maxW = wide ? "max-w-6xl" : "max-w-lg lg:max-w-3xl";
@@ -100,7 +103,7 @@ export function TenantHeader({
             <TenantMark />
           </SecretLogoTap>
           <Link
-            to="/portal"
+            to={homeTo}
             className={cn(
               "font-display font-bold",
               compact ? "text-sm sm:text-base" : "text-base sm:text-lg",

@@ -1,5 +1,5 @@
 import { money } from "@/lib/money";
-import type { Parcel } from "@/lib/mock-data";
+import type { Parcel } from "@/lib/types/parcel";
 import type { TenantBranding } from "@/lib/tenant";
 
 type ReceiptPrintProps = {

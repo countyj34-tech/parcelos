@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   ArrowRight,
   Check,
+  Clock,
   Copy,
   Package,
   PartyPopper,
@@ -41,6 +42,11 @@ import { BRANCHES, CATEGORIES } from "@/lib/mock-data";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import {
+  clearReceptionRegisterMode,
+  isReceptionRegisterMode,
+  markReceptionRegisterMode,
+} from "@/lib/portal-mode";
 
 export const Route = createFileRoute("/portal/register")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -104,17 +110,65 @@ const ACCOUNT_BENEFITS = [
   "Notifications",
 ] as const;
 
+function LiveClock({ className }: { className?: string }) {
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(new Date()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const date = now.toLocaleDateString("en-GB", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+  const time = now.toLocaleTimeString("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+
+  return (
+    <div
+      className={cn(
+        "inline-flex items-center gap-2 rounded-xl border border-white/20 bg-black/25 px-3 py-1.5 text-white backdrop-blur-md",
+        className,
+      )}
+    >
+      <Clock className="h-3.5 w-3.5 shrink-0 text-white/70" />
+      <div className="leading-tight">
+        <p className="font-display text-base font-semibold tabular-nums tracking-wide sm:text-lg md:text-xl">{time}</p>
+        <p className="text-[10px] text-white/65 sm:text-xs md:text-sm">{date}</p>
+      </div>
+    </div>
+  );
+}
+
 function PortalPage({
   children,
   wide = false,
+  desk = false,
+  receptionDesk = false,
 }: {
   children: ReactNode;
   wide?: boolean;
+  /** Counter / large-screen layout — fills the viewport */
+  desk?: boolean;
+  /** Staff walk-in — brand link returns to reception, not customer portal */
+  receptionDesk?: boolean;
 }) {
   const { tenant } = useTenant();
 
   return (
-    <div className="relative flex min-h-dvh flex-col overflow-hidden">
+    <div
+      className={cn(
+        "relative flex min-h-dvh flex-col overflow-hidden",
+        desk && "md:h-dvh md:max-h-dvh",
+      )}
+    >
       <img
         src={tenant.heroImageUrl}
         alt=""
@@ -128,16 +182,23 @@ function PortalPage({
         }}
       />
 
-      <TenantHeader transparent wide compact />
+      <TenantHeader
+        transparent
+        wide
+        compact
+        homeTo={receptionDesk ? "/app/reception" : "/portal"}
+      />
 
       <main
         className={cn(
           "relative z-10 mx-auto flex w-full flex-1 flex-col px-4 sm:px-6 lg:px-8",
-          wide
-            ? "max-w-lg md:max-w-2xl lg:max-w-3xl xl:max-w-4xl md:justify-center md:py-6"
-            : "max-w-md sm:max-w-lg",
+          desk
+            ? "max-w-none md:max-w-[min(100%,76rem)] xl:max-w-[min(100%,88rem)] md:min-h-0 md:py-2 lg:px-10 lg:py-3"
+            : wide
+              ? "max-w-lg md:max-w-2xl lg:max-w-3xl xl:max-w-4xl md:justify-center md:py-6"
+              : "max-w-md sm:max-w-lg",
         )}
-        style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}
+        style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
       >
         {children}
       </main>
@@ -149,7 +210,7 @@ function RegisterParcel() {
   const { tenant } = useTenant();
   const { from } = Route.useSearch();
   const navigate = useNavigate();
-  const fromReception = from === "reception";
+  const fromReception = from === "reception" || isReceptionRegisterMode();
   const [mode, setMode] = useState<Mode>(fromReception ? "wizard" : "choose");
   const [checkoutAs, setCheckoutAs] = useState<CheckoutAs>(fromReception ? "guest" : null);
   const [step, setStep] = useState(0);
@@ -161,6 +222,15 @@ function RegisterParcel() {
   const set = (k: keyof FormState) => (v: string) => setForm((f) => ({ ...f, [k]: v }));
 
   const liveCompany = isSupabaseConfigured() && /^[0-9a-f-]{36}$/i.test(tenant.id);
+
+  useEffect(() => {
+    if (from === "reception") markReceptionRegisterMode();
+  }, [from]);
+
+  const exitToReception = () => {
+    clearReceptionRegisterMode();
+    void navigate({ to: "/app/reception" });
+  };
 
   useEffect(() => {
     if (!liveCompany) {
@@ -264,16 +334,26 @@ function RegisterParcel() {
 
   if (mode === "choose") {
     return (
-      <PortalPage wide>
+      <PortalPage wide receptionDesk={fromReception}>
         <FadeIn className="flex flex-1 flex-col justify-center py-4">
           <div className="mx-auto flex w-full flex-col gap-3 md:gap-5">
             <div className="text-center">
-              <Link
-                to={fromReception ? "/app/reception" : "/portal"}
-                className="inline-flex items-center gap-1 text-xs font-medium text-white/80 hover:text-white md:text-sm"
-              >
-                <ArrowLeft className="h-3.5 w-3.5" /> Back
-              </Link>
+              {fromReception ? (
+                <button
+                  type="button"
+                  onClick={exitToReception}
+                  className="inline-flex items-center gap-1 text-xs font-medium text-white/80 hover:text-white md:text-sm"
+                >
+                  <ArrowLeft className="h-3.5 w-3.5" /> Back to reception
+                </button>
+              ) : (
+                <Link
+                  to="/portal"
+                  className="inline-flex items-center gap-1 text-xs font-medium text-white/80 hover:text-white md:text-sm"
+                >
+                  <ArrowLeft className="h-3.5 w-3.5" /> Back
+                </Link>
+              )}
               <h1 className="mt-2 font-display text-xl font-bold tracking-tight text-white md:text-3xl">
                 Send a parcel
               </h1>
@@ -359,7 +439,7 @@ function RegisterParcel() {
 
   if (mode === "success") {
     return (
-      <PortalPage wide>
+      <PortalPage wide receptionDesk={fromReception}>
         <ScaleIn className="w-full md:mx-auto md:max-w-2xl">
           <div className="overflow-hidden rounded-2xl border border-white/20 bg-white/95 shadow-xl backdrop-blur-md">
             <div
@@ -413,16 +493,28 @@ function RegisterParcel() {
               </div>
             </div>
             <div className="flex flex-wrap gap-2 border-t border-border p-5 sm:p-6">
-              <Button
-                asChild
-                className="h-11 flex-1 rounded-xl sm:h-12"
-                style={{ background: "var(--tenant-primary)", color: "var(--tenant-primary-fg)" }}
-              >
-                <Link to="/portal/track">Track parcel</Link>
-              </Button>
-              <Button asChild variant="outline" className="h-11 flex-1 rounded-xl sm:h-12">
-                <Link to={fromReception ? "/app/reception" : "/portal"}>Done</Link>
-              </Button>
+              {fromReception ? (
+                <Button
+                  className="h-11 flex-1 rounded-xl sm:h-12"
+                  style={{ background: "var(--tenant-primary)", color: "var(--tenant-primary-fg)" }}
+                  onClick={exitToReception}
+                >
+                  Back to reception
+                </Button>
+              ) : (
+                <>
+                  <Button
+                    asChild
+                    className="h-11 flex-1 rounded-xl sm:h-12"
+                    style={{ background: "var(--tenant-primary)", color: "var(--tenant-primary-fg)" }}
+                  >
+                    <Link to="/portal/track">Track parcel</Link>
+                  </Button>
+                  <Button asChild variant="outline" className="h-11 flex-1 rounded-xl sm:h-12">
+                    <Link to="/portal">Done</Link>
+                  </Button>
+                </>
+              )}
             </div>
           </div>
         </ScaleIn>
@@ -431,58 +523,62 @@ function RegisterParcel() {
   }
 
   return (
-    <PortalPage wide>
-      <FadeIn className="flex w-full flex-col gap-3 pb-2 sm:gap-4 md:gap-5">
-        <div>
-          <button
-            type="button"
-            onClick={() => {
-              if (fromReception) {
-                void navigate({ to: "/app/reception" });
-                return;
-              }
-              setMode("choose");
-            }}
-            className="group inline-flex items-center gap-1 text-xs font-medium text-white/75 transition-colors hover:text-white md:text-sm"
-          >
-            <ArrowLeft className="h-3.5 w-3.5 transition-transform group-hover:-translate-x-0.5" /> Back
-          </button>
-          <h1 className="mt-2 font-display text-xl font-bold text-white md:text-2xl lg:text-3xl">
-            Send a parcel
-          </h1>
-          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
-            <p className="text-xs text-white/65 md:text-sm">
-              {checkoutAs === "guest" ? "Guest" : "Account"} · Step {step + 1} of 4
-            </p>
-            {tenant.priceChartUrl ? (
-              <Dialog>
-                <DialogTrigger asChild>
-                  <button
-                    type="button"
-                    className="inline-flex items-center gap-1 text-xs font-semibold text-white underline-offset-2 hover:underline md:text-sm"
-                  >
-                    <Table2 className="h-3.5 w-3.5" /> View rates
-                  </button>
-                </DialogTrigger>
-                <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto sm:max-w-xl">
-                  <DialogHeader>
-                    <DialogTitle>{tenant.name} rate chart</DialogTitle>
-                    <DialogDescription>
-                      Fee ranges for reference. Final amount is confirmed at the counter after weighing.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <img
-                    src={tenant.priceChartUrl}
-                    alt={`${tenant.name} price chart`}
-                    className="w-full rounded-xl border border-border"
-                  />
-                </DialogContent>
-              </Dialog>
-            ) : null}
+    <PortalPage wide desk receptionDesk={fromReception}>
+      <FadeIn className="flex min-h-0 w-full flex-1 flex-col gap-3 pb-2 sm:gap-4 md:h-full md:gap-3 lg:gap-4">
+        <div className="flex flex-wrap items-start justify-between gap-3 md:shrink-0">
+          <div className="min-w-0 flex-1">
+            <button
+              type="button"
+              onClick={() => {
+                if (fromReception) {
+                  exitToReception();
+                  return;
+                }
+                setMode("choose");
+              }}
+              className="group inline-flex items-center gap-1 text-xs font-medium text-white/75 transition-colors hover:text-white md:text-sm"
+            >
+              <ArrowLeft className="h-3.5 w-3.5 transition-transform group-hover:-translate-x-0.5" />{" "}
+              {fromReception ? "Back to reception" : "Back"}
+            </button>
+            <h1 className="mt-1.5 font-display text-xl font-bold text-white md:mt-2 md:text-2xl lg:text-3xl xl:text-4xl">
+              Send a parcel
+            </h1>
+            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+              <p className="text-xs text-white/65 md:text-sm">
+                {fromReception ? "Counter" : checkoutAs === "guest" ? "Guest" : "Account"} · Step {step + 1} of 4
+              </p>
+              {tenant.priceChartUrl ? (
+                <Dialog>
+                  <DialogTrigger asChild>
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1 text-xs font-semibold text-white underline-offset-2 hover:underline md:text-sm"
+                    >
+                      <Table2 className="h-3.5 w-3.5" /> View rates
+                    </button>
+                  </DialogTrigger>
+                  <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto sm:max-w-xl">
+                    <DialogHeader>
+                      <DialogTitle>{tenant.name} rate chart</DialogTitle>
+                      <DialogDescription>
+                        Fee ranges for reference. Final amount is confirmed at the counter after weighing.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <img
+                      src={tenant.priceChartUrl}
+                      alt={`${tenant.name} price chart`}
+                      className="w-full rounded-xl border border-border"
+                    />
+                  </DialogContent>
+                </Dialog>
+              ) : null}
+            </div>
           </div>
+          <LiveClock className="shrink-0 md:px-4 md:py-2" />
         </div>
 
-        <ol className="grid grid-cols-4 gap-1.5 sm:gap-2">
+        <ol className="grid w-full shrink-0 grid-cols-4 gap-1.5 sm:gap-2 md:mx-auto md:max-w-4xl lg:max-w-5xl">
           {STEPS.map((s, i) => {
             const done = i < step;
             const current = i === step;
@@ -491,7 +587,7 @@ function RegisterParcel() {
                 {i < STEPS.length - 1 ? (
                   <span
                     aria-hidden
-                    className="absolute left-[calc(50%+14px)] right-[calc(-50%+14px)] top-[15px] h-0.5 overflow-hidden rounded-full sm:top-[17px]"
+                    className="absolute left-[calc(50%+14px)] right-[calc(-50%+14px)] top-[15px] h-0.5 overflow-hidden rounded-full sm:top-[17px] md:top-[19px]"
                     style={{ background: "rgba(255,255,255,0.22)" }}
                   >
                     <span
@@ -507,7 +603,7 @@ function RegisterParcel() {
                 <motion.span
                   layout
                   className={cn(
-                    "relative z-10 grid h-8 w-8 place-items-center rounded-full text-xs font-bold transition-transform duration-200 sm:h-9 sm:w-9 sm:text-sm",
+                    "relative z-10 grid h-8 w-8 place-items-center rounded-full text-xs font-bold transition-transform duration-200 sm:h-9 sm:w-9 sm:text-sm md:h-10 md:w-10",
                     current && "scale-110",
                   )}
                   style={
@@ -530,7 +626,7 @@ function RegisterParcel() {
                 </motion.span>
                 <p
                   className={cn(
-                    "mt-1.5 w-full truncate text-[10px] font-semibold transition-colors sm:text-xs",
+                    "mt-1.5 w-full truncate text-[10px] font-semibold transition-colors sm:text-xs md:text-sm",
                     current || done ? "text-white" : "text-white/55",
                   )}
                 >
@@ -543,7 +639,7 @@ function RegisterParcel() {
 
         <motion.div
           layout
-          className="rounded-2xl border border-white/20 bg-white/97 p-4 shadow-xl backdrop-blur-md transition-shadow duration-300 hover:shadow-2xl sm:p-5 md:p-6 lg:p-8"
+          className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-white/20 bg-white/97 p-4 shadow-xl backdrop-blur-md sm:p-5 md:p-6 lg:p-8 xl:p-10"
         >
           <AnimatePresence mode="wait">
             <motion.div
@@ -552,15 +648,17 @@ function RegisterParcel() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+              className="flex min-h-0 flex-1 flex-col overflow-y-auto"
             >
               {step === 0 ? (
-                <div className="grid gap-4 sm:grid-cols-2 sm:gap-5 lg:gap-6">
+                <div className="grid flex-1 content-start gap-4 sm:grid-cols-2 sm:gap-5 md:gap-6 lg:gap-8 lg:grid-cols-2">
                   <Field
                     label="Full name"
                     value={form.senderName}
                     onChange={set("senderName")}
                     required
                     error={attempted && step === 0 && !form.senderName.trim()}
+                    large
                   />
                   <Field
                     label="Phone"
@@ -568,20 +666,22 @@ function RegisterParcel() {
                     onChange={set("senderPhone")}
                     required
                     error={attempted && step === 0 && !form.senderPhone.trim()}
+                    large
                   />
-                  <Field label="NRC (optional)" value={form.senderNrc} onChange={set("senderNrc")} />
-                  <Field label="Email (optional)" value={form.senderEmail} onChange={set("senderEmail")} />
+                  <Field label="NRC (optional)" value={form.senderNrc} onChange={set("senderNrc")} large />
+                  <Field label="Email (optional)" value={form.senderEmail} onChange={set("senderEmail")} large />
                 </div>
               ) : null}
 
               {step === 1 ? (
-                <div className="grid gap-4 sm:grid-cols-2 sm:gap-5 lg:gap-6">
+                <div className="grid flex-1 content-start gap-4 sm:grid-cols-2 sm:gap-5 md:gap-6 lg:gap-8">
                   <Field
                     label="Full name"
                     value={form.receiverName}
                     onChange={set("receiverName")}
                     required
                     error={attempted && step === 1 && !form.receiverName.trim()}
+                    large
                   />
                   <Field
                     label="Phone"
@@ -589,15 +689,16 @@ function RegisterParcel() {
                     onChange={set("receiverPhone")}
                     required
                     error={attempted && step === 1 && !form.receiverPhone.trim()}
+                    large
                   />
                   <div className="space-y-1.5 sm:col-span-2">
-                    <Label>
+                    <Label className="md:text-sm">
                       Destination branch <span className="text-[var(--tenant-primary)]">*</span>
                     </Label>
                     <Select value={form.destination} onValueChange={set("destination")}>
                       <SelectTrigger
                         className={cn(
-                          "h-11 w-full rounded-xl border-border/80 bg-background text-base transition-all hover:border-[var(--tenant-primary)]/40 focus:ring-[var(--tenant-primary)] sm:h-12",
+                          "h-11 w-full rounded-xl border-border/80 bg-background text-base transition-all hover:border-[var(--tenant-primary)]/40 focus:ring-[var(--tenant-primary)] sm:h-12 md:h-14 md:text-lg",
                           attempted && step === 1 && !form.destination && "border-destructive ring-1 ring-destructive/30",
                         )}
                       >
@@ -623,26 +724,26 @@ function RegisterParcel() {
               ) : null}
 
               {step === 2 ? (
-                <div className="grid gap-4 sm:grid-cols-2 sm:gap-5 lg:gap-6">
+                <div className="grid flex-1 content-start gap-4 overflow-y-auto sm:grid-cols-2 sm:gap-5 md:gap-6 lg:gap-8">
                   <div className="space-y-1.5 sm:col-span-2">
-                    <Label>
+                    <Label className="md:text-sm">
                       Parcel description <span className="text-[var(--tenant-primary)]">*</span>
                     </Label>
                     <Textarea
                       value={form.description}
                       onChange={(e) => set("description")(e.target.value)}
                       className={cn(
-                        "min-h-20 rounded-xl border-border/80 text-base transition-all hover:border-[var(--tenant-primary)]/40 focus-visible:ring-[var(--tenant-primary)] md:min-h-24",
+                        "min-h-20 rounded-xl border-border/80 text-base transition-all hover:border-[var(--tenant-primary)]/40 focus-visible:ring-[var(--tenant-primary)] md:min-h-28 md:text-lg",
                         attempted && step === 2 && !form.description.trim() && "border-destructive",
                       )}
                       placeholder="What's inside the parcel?"
                     />
                   </div>
-                  <Field label="Declared value (ZMW)" value={form.declaredValue} onChange={set("declaredValue")} />
+                  <Field label="Declared value (ZMW)" value={form.declaredValue} onChange={set("declaredValue")} large />
                   <div className="space-y-1.5">
-                    <Label>Category</Label>
+                    <Label className="md:text-sm">Category</Label>
                     <Select value={form.category} onValueChange={set("category")}>
-                      <SelectTrigger className="h-11 w-full rounded-xl border-border/80 bg-background transition-all hover:border-[var(--tenant-primary)]/40 focus:ring-[var(--tenant-primary)] sm:h-12">
+                      <SelectTrigger className="h-11 w-full rounded-xl border-border/80 bg-background transition-all hover:border-[var(--tenant-primary)]/40 focus:ring-[var(--tenant-primary)] sm:h-12 md:h-14 md:text-lg">
                         <SelectValue placeholder="Select" />
                       </SelectTrigger>
                       <SelectContent>
@@ -654,14 +755,14 @@ function RegisterParcel() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <Field label="Quantity" value={form.quantity} onChange={set("quantity")} />
-                  <Field label="Weight kg (optional)" value={form.weight} onChange={set("weight")} />
+                  <Field label="Quantity" value={form.quantity} onChange={set("quantity")} large />
+                  <Field label="Weight kg (optional)" value={form.weight} onChange={set("weight")} large />
                   <div className="space-y-1.5 sm:col-span-2">
-                    <Label>Special instructions</Label>
+                    <Label className="md:text-sm">Special instructions</Label>
                     <Textarea
                       value={form.instructions}
                       onChange={(e) => set("instructions")(e.target.value)}
-                      className="min-h-16 rounded-xl border-border/80 transition-all hover:border-[var(--tenant-primary)]/40 focus-visible:ring-[var(--tenant-primary)]"
+                      className="min-h-16 rounded-xl border-border/80 transition-all hover:border-[var(--tenant-primary)]/40 focus-visible:ring-[var(--tenant-primary)] md:min-h-20 md:text-lg"
                       placeholder="Fragile, keep upright…"
                     />
                     <p className="text-xs text-muted-foreground">
@@ -750,18 +851,28 @@ function RegisterParcel() {
             </motion.div>
           </AnimatePresence>
 
-          <div className="mt-5 flex items-center justify-between gap-3 border-t border-border pt-4 sm:mt-6 sm:pt-5 md:mt-8">
+          <div className="mt-auto flex shrink-0 items-center justify-between gap-3 border-t border-border pt-4 sm:pt-5 md:pt-6">
             <Button
               variant="ghost"
-              className="group rounded-xl transition-colors hover:bg-muted"
-              disabled={step === 0}
-              onClick={() => setStep((s) => s - 1)}
+              className="group h-11 rounded-xl px-4 transition-colors hover:bg-muted md:h-12 md:px-5 md:text-base"
+              onClick={() => {
+                if (step > 0) {
+                  setStep((s) => s - 1);
+                  return;
+                }
+                if (fromReception) {
+                  exitToReception();
+                  return;
+                }
+                setMode("choose");
+              }}
             >
-              <ArrowLeft className="mr-1.5 h-4 w-4 transition-transform group-hover:-translate-x-0.5" /> Back
+              <ArrowLeft className="mr-1.5 h-4 w-4 transition-transform group-hover:-translate-x-0.5" />{" "}
+              {step === 0 && fromReception ? "Reception" : "Back"}
             </Button>
             {step < 3 ? (
               <Button
-                className="group h-11 rounded-xl px-5 shadow-md transition-all hover:-translate-y-0.5 hover:shadow-lg active:translate-y-0 sm:h-12 sm:px-7"
+                className="group h-11 rounded-xl px-5 shadow-md transition-all hover:-translate-y-0.5 hover:shadow-lg active:translate-y-0 sm:h-12 sm:px-7 md:h-14 md:px-10 md:text-base"
                 style={{ background: "var(--tenant-primary)", color: "var(--tenant-primary-fg)" }}
                 onClick={goNext}
               >
@@ -769,7 +880,7 @@ function RegisterParcel() {
               </Button>
             ) : (
               <Button
-                className="group h-11 rounded-xl px-5 shadow-md transition-all hover:-translate-y-0.5 hover:shadow-lg active:translate-y-0 sm:h-12 sm:px-7"
+                className="group h-11 rounded-xl px-5 shadow-md transition-all hover:-translate-y-0.5 hover:shadow-lg active:translate-y-0 sm:h-12 sm:px-7 md:h-14 md:px-10 md:text-base"
                 style={{ background: "var(--tenant-primary)", color: "var(--tenant-primary-fg)" }}
                 disabled={submitting}
                 onClick={() => void submitParcel()}
@@ -791,6 +902,7 @@ function Field({
   placeholder,
   required,
   error,
+  large,
 }: {
   label: string;
   value: string;
@@ -798,10 +910,11 @@ function Field({
   placeholder?: string;
   required?: boolean;
   error?: boolean;
+  large?: boolean;
 }) {
   return (
     <div className="space-y-1.5">
-      <Label className="text-foreground/90">
+      <Label className={cn("text-foreground/90", large && "md:text-sm")}>
         {label}
         {required ? <span className="text-[var(--tenant-primary)]"> *</span> : ""}
       </Label>
@@ -811,6 +924,7 @@ function Field({
         onChange={(e) => onChange(e.target.value)}
         className={cn(
           "h-11 rounded-xl border-border/80 bg-background text-base shadow-sm transition-all duration-200 hover:border-[var(--tenant-primary)]/45 focus-visible:border-[var(--tenant-primary)] focus-visible:ring-2 focus-visible:ring-[var(--tenant-primary)]/25 sm:h-12",
+          large && "md:h-14 md:text-lg",
           error && "border-destructive ring-1 ring-destructive/30",
         )}
       />

@@ -22,6 +22,7 @@ import {
   UsersRound,
 } from "lucide-react";
 import { CompanyLogo } from "@/components/dashboard/company-logo";
+import { TrialBanner } from "@/components/dashboard/trial-banner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -44,7 +45,7 @@ import {
 import { useTheme } from "@/hooks/use-theme";
 import { useAuth } from "@/hooks/use-auth";
 import { canAccessRoute, DEMO_ROLES, getHomeRouteForRole, getNavForRole, type UserRole } from "@/lib/roles";
-import { BRANCHES } from "@/lib/mock-data";
+import { useBranchNames } from "@/hooks/use-parcels";
 import { cn } from "@/lib/utils";
 
 const ICONS: Record<string, typeof Gauge> = {
@@ -103,11 +104,20 @@ function SidebarNav({
 
 export function DashboardShell({ children }: { children: ReactNode }) {
   const { theme, toggle } = useTheme();
-  const { role, setDemoRole, user, signOut, isDemoMode } = useAuth();
+  const { role, setDemoRole, user, signOut, isDemoMode, companyId } = useAuth();
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
-  const [branch, setBranch] = useState(user.branch === "All Branches" ? BRANCHES[0]! : user.branch);
+  const { data: liveBranches = [] } = useBranchNames(companyId);
+  const branchOptions =
+    liveBranches.length > 0
+      ? liveBranches.map((b) => b.name)
+      : user.branch && user.branch !== "All Branches"
+        ? [user.branch]
+        : [];
+  const [branch, setBranch] = useState(
+    user.branch === "All Branches" ? "All Branches" : user.branch || "All Branches",
+  );
 
   const switchDemoRole = (next: UserRole) => {
     setDemoRole(next);
@@ -144,6 +154,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
+        <TrialBanner />
         {/* Top navigation */}
         <header className="sticky top-0 z-40 border-b border-border bg-background/90 backdrop-blur-xl">
           <div className="flex flex-wrap items-center gap-3 px-4 py-3 lg:px-6">
@@ -166,11 +177,11 @@ export function DashboardShell({ children }: { children: ReactNode }) {
                 <SelectValue placeholder="Branch" />
               </SelectTrigger>
               <SelectContent>
-                {user.branch === "All Branches" ? (
-                  <SelectItem value="All Branches">All branches</SelectItem>
-                ) : null}
-                {BRANCHES.map((b) => (
-                  <SelectItem key={b} value={b}>{b}</SelectItem>
+                <SelectItem value="All Branches">All branches</SelectItem>
+                {branchOptions.map((b) => (
+                  <SelectItem key={b} value={b}>
+                    {b}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>

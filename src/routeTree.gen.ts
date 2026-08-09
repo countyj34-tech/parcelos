@@ -15,6 +15,7 @@ import { Route as AppRouteImport } from './routes/app'
 import { Route as JoinRouteImport } from './routes/join'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as PortalRouteImport } from './routes/portal'
+import { Route as SignupRouteImport } from './routes/signup'
 import { Route as TrackRouteImport } from './routes/track'
 import { Route as AppIndexRouteImport } from './routes/app.index'
 import { Route as AppBranchesRouteImport } from './routes/app.branches'
@@ -33,6 +34,7 @@ import { Route as AppSupportRouteImport } from './routes/app.support'
 import { Route as AppTrackingRouteImport } from './routes/app.tracking'
 import { Route as AppUsersRouteImport } from './routes/app.users'
 import { Route as CSlugRouteImport } from './routes/c.$slug'
+import { Route as InviteTokenRouteImport } from './routes/invite.$token'
 import { Route as PortalIndexRouteImport } from './routes/portal.index'
 import { Route as PortalHistoryRouteImport } from './routes/portal.history'
 import { Route as PortalNotificationsRouteImport } from './routes/portal.notifications'
@@ -70,6 +72,11 @@ const LoginRoute = LoginRouteImport.update({
 const PortalRoute = PortalRouteImport.update({
   id: '/portal',
   path: '/portal',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SignupRoute = SignupRouteImport.update({
+  id: '/signup',
+  path: '/signup',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TrackRoute = TrackRouteImport.update({
@@ -162,6 +169,11 @@ const CSlugRoute = CSlugRouteImport.update({
   path: '/c/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
+const InviteTokenRoute = InviteTokenRouteImport.update({
+  id: '/invite/$token',
+  path: '/invite/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PortalIndexRoute = PortalIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -210,6 +222,7 @@ export interface FileRoutesByFullPath {
   '/join': typeof JoinRoute
   '/login': typeof LoginRoute
   '/portal': typeof PortalRouteWithChildren
+  '/signup': typeof SignupRoute
   '/track': typeof TrackRoute
   '/app/branches': typeof AppBranchesRoute
   '/app/companies': typeof AppCompaniesRoute
@@ -227,6 +240,7 @@ export interface FileRoutesByFullPath {
   '/app/tracking': typeof AppTrackingRoute
   '/app/users': typeof AppUsersRoute
   '/c/$slug': typeof CSlugRoute
+  '/invite/$token': typeof InviteTokenRoute
   '/portal/history': typeof PortalHistoryRoute
   '/portal/notifications': typeof PortalNotificationsRoute
   '/portal/profile': typeof PortalProfileRoute
@@ -242,6 +256,7 @@ export interface FileRoutesByTo {
   '/admin': typeof AdminRoute
   '/join': typeof JoinRoute
   '/login': typeof LoginRoute
+  '/signup': typeof SignupRoute
   '/track': typeof TrackRoute
   '/app/branches': typeof AppBranchesRoute
   '/app/companies': typeof AppCompaniesRoute
@@ -259,6 +274,7 @@ export interface FileRoutesByTo {
   '/app/tracking': typeof AppTrackingRoute
   '/app/users': typeof AppUsersRoute
   '/c/$slug': typeof CSlugRoute
+  '/invite/$token': typeof InviteTokenRoute
   '/portal/history': typeof PortalHistoryRoute
   '/portal/notifications': typeof PortalNotificationsRoute
   '/portal/profile': typeof PortalProfileRoute
@@ -277,6 +293,7 @@ export interface FileRoutesById {
   '/join': typeof JoinRoute
   '/login': typeof LoginRoute
   '/portal': typeof PortalRouteWithChildren
+  '/signup': typeof SignupRoute
   '/track': typeof TrackRoute
   '/app/branches': typeof AppBranchesRoute
   '/app/companies': typeof AppCompaniesRoute
@@ -294,6 +311,7 @@ export interface FileRoutesById {
   '/app/tracking': typeof AppTrackingRoute
   '/app/users': typeof AppUsersRoute
   '/c/$slug': typeof CSlugRoute
+  '/invite/$token': typeof InviteTokenRoute
   '/portal/history': typeof PortalHistoryRoute
   '/portal/notifications': typeof PortalNotificationsRoute
   '/portal/profile': typeof PortalProfileRoute
@@ -313,6 +331,7 @@ export interface FileRouteTypes {
     | '/join'
     | '/login'
     | '/portal'
+    | '/signup'
     | '/track'
     | '/app/branches'
     | '/app/companies'
@@ -330,6 +349,7 @@ export interface FileRouteTypes {
     | '/app/tracking'
     | '/app/users'
     | '/c/$slug'
+    | '/invite/$token'
     | '/portal/history'
     | '/portal/notifications'
     | '/portal/profile'
@@ -345,6 +365,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/join'
     | '/login'
+    | '/signup'
     | '/track'
     | '/app/branches'
     | '/app/companies'
@@ -362,6 +383,7 @@ export interface FileRouteTypes {
     | '/app/tracking'
     | '/app/users'
     | '/c/$slug'
+    | '/invite/$token'
     | '/portal/history'
     | '/portal/notifications'
     | '/portal/profile'
@@ -379,6 +401,7 @@ export interface FileRouteTypes {
     | '/join'
     | '/login'
     | '/portal'
+    | '/signup'
     | '/track'
     | '/app/branches'
     | '/app/companies'
@@ -396,6 +419,7 @@ export interface FileRouteTypes {
     | '/app/tracking'
     | '/app/users'
     | '/c/$slug'
+    | '/invite/$token'
     | '/portal/history'
     | '/portal/notifications'
     | '/portal/profile'
@@ -414,8 +438,10 @@ export interface RootRouteChildren {
   JoinRoute: typeof JoinRoute
   LoginRoute: typeof LoginRoute
   PortalRoute: typeof PortalRouteWithChildren
+  SignupRoute: typeof SignupRoute
   TrackRoute: typeof TrackRoute
   CSlugRoute: typeof CSlugRoute
+  InviteTokenRoute: typeof InviteTokenRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -460,6 +486,13 @@ declare module '@tanstack/react-router' {
       path: '/portal'
       fullPath: '/portal'
       preLoaderRoute: typeof PortalRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/signup': {
+      id: '/signup'
+      path: '/signup'
+      fullPath: '/signup'
+      preLoaderRoute: typeof SignupRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/track': {
@@ -586,6 +619,13 @@ declare module '@tanstack/react-router' {
       path: '/c/$slug'
       fullPath: '/c/$slug'
       preLoaderRoute: typeof CSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/invite/$token': {
+      id: '/invite/$token'
+      path: '/invite/$token'
+      fullPath: '/invite/$token'
+      preLoaderRoute: typeof InviteTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/portal/': {
@@ -729,8 +769,10 @@ const rootRouteChildren: RootRouteChildren = {
   JoinRoute: JoinRoute,
   LoginRoute: LoginRoute,
   PortalRoute: PortalRouteWithChildren,
+  SignupRoute: SignupRoute,
   TrackRoute: TrackRoute,
   CSlugRoute: CSlugRoute,
+  InviteTokenRoute: InviteTokenRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
