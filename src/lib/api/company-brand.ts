@@ -44,7 +44,6 @@ export async function updateCompanyBrand(
   });
 
   if (error) {
-    // Fallback if migration 20 not applied yet
     if (/function .*update_my_company_brand/i.test(error.message) || error.code === "PGRST202") {
       const { error: upErr } = await supabase
         .from("companies")
@@ -67,7 +66,46 @@ export async function updateCompanyBrand(
   return { ok: true };
 }
 
-/** Upload logo to public `company-logos` bucket; path must start with real company UUID. */
+async function resolveUploadCompanyId(preferred?: string | null): Promise<string | null> {
+  const supabase = getSupabase();
+  if (!supabase) return null;
+
+  const { data: myId } = await supabase.rpc("get_my_company_id");
+  if (isCompanyUuid(myId as string)) return myId as string;
+  if (isCompanyUuid(preferred)) return preferred;
+  return null;
+}
+
+async function uploadLogoViaEdge(file: File): Promise<{ url: string } | { error: string }> {
+  const supabase = getSupabase();
+  if (!supabase) return { error: "Supabase not available" };
+
+  const { data: sessionData } = await supabase.auth.getSession();
+  const token = sessionData.session?.access_token;
+  const base = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+  const anon = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+  if (!token || !base || !anon) return { error: "Sign in required" };
+
+  const body = new FormData();
+  body.append("file", file);
+
+  const res = await fetch(`${base}/functions/v1/upload-company-logo`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      apikey: anon,
+    },
+    body,
+  });
+
+  const json = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
+  if (!res.ok || !json.url) {
+    return { error: json.error ?? "Logo upload failed" };
+  }
+  return { url: json.url };
+}
+
+/** Upload logo — tries direct storage, then secure edge upload if RLS blocks. */
 export async function uploadCompanyLogo(
   companyId: string,
   file: File,
@@ -80,7 +118,8 @@ export async function uploadCompanyLogo(
   const supabase = getSupabase();
   if (!supabase) return { error: "Supabase not available" };
 
-  if (!isCompanyUuid(companyId)) {
+  const resolvedId = await resolveUploadCompanyId(companyId);
+  if (!resolvedId) {
     return {
       error: "Company not linked yet. Refresh the page or sign in again, then upload the logo.",
     };
@@ -88,26 +127,30 @@ export async function uploadCompanyLogo(
 
   const ext = file.name.split(".").pop()?.toLowerCase() || "png";
   const safeExt = ["png", "jpg", "jpeg", "webp", "svg"].includes(ext) ? ext : "png";
-  const path = `${companyId}/logo-${Date.now()}.${safeExt}`;
+  const path = `${resolvedId}/logo-${Date.now()}.${safeExt}`;
 
   const { error: upErr } = await supabase.storage.from("company-logos").upload(path, file, {
     upsert: true,
     contentType: file.type || "image/png",
   });
 
-  if (upErr) {
-    const msg = upErr.message || "Upload failed";
-    if (/row-level security|rls/i.test(msg)) {
-      return {
-        error:
-          "Logo upload blocked by security policy. Run migration 20260312000020_company_brand_rls.sql in Supabase SQL Editor, then try again.",
-      };
-    }
-    return { error: msg };
+  if (!upErr) {
+    const { data } = supabase.storage.from("company-logos").getPublicUrl(path);
+    return { url: data.publicUrl };
   }
 
-  const { data } = supabase.storage.from("company-logos").getPublicUrl(path);
-  return { url: data.publicUrl };
+  // Storage RLS still blocking — use service-role edge function
+  if (/row-level security|rls|policy/i.test(upErr.message)) {
+    const viaEdge = await uploadLogoViaEdge(file);
+    if ("url" in viaEdge) return viaEdge;
+    return {
+      error:
+        viaEdge.error ||
+        "Logo upload blocked. Run 20260312000022_fix_logo_storage_rls.sql in Supabase SQL Editor (and deploy upload-company-logo).",
+    };
+  }
+
+  return { error: upErr.message || "Upload failed" };
 }
 
 function fileToDataUrl(file: File): Promise<string> {
