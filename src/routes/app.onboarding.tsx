@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { ImagePlus, Loader2, Share2 } from "lucide-react";
 import { SharePortalPanel } from "@/components/dashboard/share-portal-panel";
@@ -7,7 +7,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/use-auth";
 import { useTenant } from "@/hooks/use-tenant";
-import { updateCompanyBrand, uploadCompanyLogo } from "@/lib/api/company-brand";
+import {
+  isCompanyUuid,
+  updateCompanyBrand,
+  uploadCompanyLogo,
+} from "@/lib/api/company-brand";
+import { mapPublicCompanyToTenant, type PublicCompanyRow } from "@/lib/api/tenant";
+import { getSupabase } from "@/lib/supabase/client";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/app/onboarding")({
@@ -16,26 +22,89 @@ export const Route = createFileRoute("/app/onboarding")({
 });
 
 function BrandOnboardingPage() {
-  const { companyId } = useAuth();
-  const { tenant, updateTenant, refreshTenant } = useTenant();
+  const { companyId, company, refreshProfileAfterAuth } = useAuth();
+  const { tenant, updateTenant, refreshTenant, activateTenant } = useTenant();
   const navigate = useNavigate();
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const [name, setName] = useState(tenant.name);
-  const [tagline, setTagline] = useState(tenant.tagline);
-  const [primary, setPrimary] = useState(tenant.primaryColor);
-  const [accent, setAccent] = useState(tenant.accentColor);
-  const [phone, setPhone] = useState(tenant.supportPhone);
-  const [email, setEmail] = useState(tenant.supportEmail);
-  const [logoUrl, setLogoUrl] = useState<string | null>(tenant.logoUrl);
+  const [name, setName] = useState("");
+  const [tagline, setTagline] = useState("");
+  const [primary, setPrimary] = useState("#0F766E");
+  const [accent, setAccent] = useState("#F59E0B");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [done, setDone] = useState(Boolean(tenant.logoUrl));
+  const [loading, setLoading] = useState(true);
+  const [done, setDone] = useState(false);
 
-  const companyKey = companyId || tenant.id;
+  const resolvedCompanyId = isCompanyUuid(companyId)
+    ? companyId
+    : isCompanyUuid(tenant.id)
+      ? tenant.id
+      : null;
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      setLoading(true);
+      await refreshProfileAfterAuth().catch(() => undefined);
+
+      const supabase = getSupabase();
+      const id = companyId;
+      if (supabase && isCompanyUuid(id)) {
+        const { data } = await supabase
+          .from("companies")
+          .select(
+            "id, name, slug, code, tagline, logo_url, primary_color, secondary_color, hero_image_url, price_chart_url, support_phone, support_email, subdomain, tracking_domain, currency_code, country_code, status",
+          )
+          .eq("id", id)
+          .maybeSingle();
+
+        if (!cancelled && data) {
+          const mapped = mapPublicCompanyToTenant(data as PublicCompanyRow);
+          updateTenant(mapped);
+          if (mapped.slug) await activateTenant(mapped.slug);
+          setName(mapped.name);
+          setTagline(mapped.tagline);
+          setPrimary(mapped.primaryColor);
+          setAccent(mapped.accentColor);
+          setPhone(mapped.supportPhone);
+          setEmail(mapped.supportEmail);
+          setLogoUrl(mapped.logoUrl);
+          setDone(Boolean(mapped.logoUrl));
+          setLoading(false);
+          return;
+        }
+      }
+
+      if (!cancelled) {
+        // Real company only — avoid demo Swift Logistics defaults for new signups
+        setName(company && company !== "Swift Logistics" ? company : "");
+        setTagline("");
+        setPrimary("#0F766E");
+        setAccent("#F59E0B");
+        setPhone("");
+        setEmail("");
+        setLogoUrl(null);
+        setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companyId]);
 
   const onLogo = async (file: File | undefined) => {
     if (!file) return;
-    const result = await uploadCompanyLogo(companyKey, file);
+    if (!resolvedCompanyId) {
+      toast.error("Company not ready yet", {
+        description: "Refresh the page or sign in again, then upload your logo.",
+      });
+      return;
+    }
+    const result = await uploadCompanyLogo(resolvedCompanyId, file);
     if ("error" in result) {
       toast.error(result.error);
       return;
@@ -46,6 +115,10 @@ function BrandOnboardingPage() {
   };
 
   const onSave = async () => {
+    if (!resolvedCompanyId) {
+      toast.error("Company not ready yet — sign in again");
+      return;
+    }
     if (!name.trim()) {
       toast.error("Company name is required");
       return;
@@ -57,7 +130,7 @@ function BrandOnboardingPage() {
 
     setSaving(true);
     const result = await updateCompanyBrand({
-      companyId: companyKey,
+      companyId: resolvedCompanyId,
       name: name.trim(),
       tagline: tagline.trim(),
       primaryColor: primary,
@@ -74,6 +147,7 @@ function BrandOnboardingPage() {
     }
 
     updateTenant({
+      id: resolvedCompanyId,
       name: name.trim(),
       tagline: tagline.trim(),
       primaryColor: primary,
@@ -94,6 +168,14 @@ function BrandOnboardingPage() {
     toast.success("Brand saved — share your portal link or QR");
   };
 
+  if (loading) {
+    return (
+      <div className="grid min-h-[40vh] place-items-center">
+        <p className="text-sm text-muted-foreground">Loading your company…</p>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-2xl space-y-8 py-4">
       <div>
@@ -102,6 +184,11 @@ function BrandOnboardingPage() {
         <p className="mt-2 text-muted-foreground">
           Customers only see your name, logo and colours. After this you can share your portal link or QR code.
         </p>
+        {!resolvedCompanyId ? (
+          <p className="mt-3 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-100">
+            Your company workspace is still linking. Refresh this page or sign out and sign in again.
+          </p>
+        ) : null}
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-6 shadow-card space-y-5">
@@ -120,7 +207,14 @@ function BrandOnboardingPage() {
           <div>
             <p className="font-medium">Company logo</p>
             <p className="text-sm text-muted-foreground">Used on the portal and as the installable app icon.</p>
-            <Button type="button" variant="outline" size="sm" className="mt-2 rounded-xl" onClick={() => fileRef.current?.click()}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="mt-2 rounded-xl"
+              disabled={!resolvedCompanyId}
+              onClick={() => fileRef.current?.click()}
+            >
               Upload logo
             </Button>
             <input
@@ -136,11 +230,21 @@ function BrandOnboardingPage() {
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5 sm:col-span-2">
             <Label>Company name</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} className="h-11 rounded-xl" />
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="h-11 rounded-xl"
+              placeholder="Your courier company name"
+            />
           </div>
           <div className="space-y-1.5 sm:col-span-2">
             <Label>Tagline</Label>
-            <Input value={tagline} onChange={(e) => setTagline(e.target.value)} className="h-11 rounded-xl" />
+            <Input
+              value={tagline}
+              onChange={(e) => setTagline(e.target.value)}
+              className="h-11 rounded-xl"
+              placeholder="Fast. Reliable. Everywhere."
+            />
           </div>
           <div className="space-y-1.5">
             <Label>Primary colour</Label>
@@ -152,15 +256,15 @@ function BrandOnboardingPage() {
           </div>
           <div className="space-y-1.5">
             <Label>Support phone</Label>
-            <Input value={phone} onChange={(e) => setPhone(e.target.value)} className="h-11 rounded-xl" />
+            <Input value={phone} onChange={(e) => setPhone(e.target.value)} className="h-11 rounded-xl" placeholder="+260…" />
           </div>
           <div className="space-y-1.5">
             <Label>Support email</Label>
-            <Input value={email} onChange={(e) => setEmail(e.target.value)} className="h-11 rounded-xl" />
+            <Input value={email} onChange={(e) => setEmail(e.target.value)} className="h-11 rounded-xl" placeholder="hello@yourcompany.zm" />
           </div>
         </div>
 
-        <Button className="h-12 w-full rounded-xl" disabled={saving} onClick={() => void onSave()}>
+        <Button className="h-12 w-full rounded-xl" disabled={saving || !resolvedCompanyId} onClick={() => void onSave()}>
           {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
           Save brand &amp; continue
         </Button>
