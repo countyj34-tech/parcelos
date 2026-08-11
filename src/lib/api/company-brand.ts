@@ -23,7 +23,7 @@ export type BrandUpdateInput = {
 /** Persist branding for the signed-in company (RPC — avoids RLS update gaps). */
 export async function updateCompanyBrand(
   input: BrandUpdateInput,
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{ ok: boolean; error?: string; tenant?: TenantBranding }> {
   if (!isSupabaseConfigured()) return { ok: true };
   const supabase = getSupabase();
   if (!supabase) return { ok: false, error: "Supabase not available" };
@@ -32,7 +32,7 @@ export async function updateCompanyBrand(
     return { ok: false, error: "Company account not ready — sign out and sign in again" };
   }
 
-  const { error } = await supabase.rpc("update_my_company_brand", {
+  const { data, error } = await supabase.rpc("update_my_company_brand", {
     p_name: input.name.trim(),
     p_tagline: input.tagline?.trim() || null,
     p_primary_color: input.primaryColor,
@@ -63,6 +63,34 @@ export async function updateCompanyBrand(
     }
     return { ok: false, error: error.message };
   }
+
+  const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null;
+  if (row?.id && row?.slug) {
+    const { mapPublicCompanyToTenant } = await import("@/lib/api/tenant");
+    return {
+      ok: true,
+      tenant: mapPublicCompanyToTenant({
+        id: String(row.id),
+        name: String(row.name ?? input.name),
+        slug: String(row.slug),
+        code: String(row.code ?? ""),
+        tagline: (row.tagline as string | null) ?? null,
+        logo_url: (row.logo_url as string | null) ?? null,
+        primary_color: (row.primary_color as string | null) ?? input.primaryColor,
+        secondary_color: (row.secondary_color as string | null) ?? input.accentColor,
+        hero_image_url: (row.hero_image_url as string | null) ?? null,
+        price_chart_url: (row.price_chart_url as string | null) ?? null,
+        support_phone: (row.support_phone as string | null) ?? null,
+        support_email: (row.support_email as string | null) ?? null,
+        subdomain: String(row.subdomain ?? `${row.slug}.parcelos.africa`),
+        tracking_domain: (row.tracking_domain as string | null) ?? null,
+        currency_code: String(row.currency_code ?? "ZMW"),
+        country_code: String(row.country_code ?? "ZM"),
+        status: String(row.status ?? "trial"),
+      }),
+    };
+  }
+
   return { ok: true };
 }
 

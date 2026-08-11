@@ -134,14 +134,18 @@ function BrandingEditor() {
             toast.error(result.error ?? "Save failed");
             return;
           }
-          updateTenant({
-            name,
-            tagline,
-            primaryColor: primary,
-            accentColor: accent,
-            supportPhone: phone,
-            logoUrl,
-          });
+          if (result.tenant) {
+            updateTenant(result.tenant);
+          } else {
+            updateTenant({
+              name,
+              tagline,
+              primaryColor: primary,
+              accentColor: accent,
+              supportPhone: phone,
+              logoUrl,
+            });
+          }
           await refreshTenant();
           toast.success("Branding saved");
         }}

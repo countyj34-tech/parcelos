@@ -98,34 +98,46 @@ export function TenantHeader({
         )}
         style={compact ? { paddingTop: "max(0.625rem, env(safe-area-inset-top))" } : undefined}
       >
-        <div className="flex items-center gap-2.5 sm:gap-3">
+        <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
           <SecretLogoTap>
             <TenantMark />
           </SecretLogoTap>
-          <Link
-            to={homeTo}
+          <div className="min-w-0 text-left">
+            <Link
+              to={homeTo}
+              className={cn(
+                "block truncate font-display font-bold",
+                compact ? "text-base sm:text-lg" : "text-lg sm:text-xl",
+                transparent && "text-white",
+              )}
+            >
+              {tenant.name}
+            </Link>
+            <p
+              className={cn(
+                "truncate text-[10px] font-medium uppercase tracking-wider sm:text-[11px]",
+                transparent ? "text-white/65" : "text-muted-foreground",
+              )}
+            >
+              Official customer portal
+            </p>
+          </div>
+        </div>
+        {tenant.supportPhone ? (
+          <a
+            href={`tel:${tenant.supportPhone.replace(/\s/g, "")}`}
             className={cn(
-              "font-display font-bold",
-              compact ? "text-sm sm:text-base" : "text-base sm:text-lg",
-              transparent && "text-white",
+              "inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors sm:px-3.5 sm:py-2 sm:text-sm",
+              transparent
+                ? "border border-white/25 text-white/90 hover:bg-white/10"
+                : "border border-border text-muted-foreground hover:bg-muted hover:text-foreground",
             )}
           >
-            {tenant.name}
-          </Link>
-        </div>
-        <a
-          href={`tel:${tenant.supportPhone.replace(/\s/g, "")}`}
-          className={cn(
-            "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors sm:px-3.5 sm:py-2 sm:text-sm",
-            transparent
-              ? "border border-white/25 text-white/90 hover:bg-white/10"
-              : "border border-border text-muted-foreground hover:bg-muted hover:text-foreground",
-          )}
-        >
-          <Phone className="h-3.5 w-3.5 sm:hidden" />
-          <span className="sm:hidden">Call</span>
-          <span className="hidden sm:inline">{tenant.supportPhone}</span>
-        </a>
+            <Phone className="h-3.5 w-3.5 sm:hidden" />
+            <span className="sm:hidden">Call</span>
+            <span className="hidden sm:inline">{tenant.supportPhone}</span>
+          </a>
+        ) : null}
       </div>
     </header>
   );

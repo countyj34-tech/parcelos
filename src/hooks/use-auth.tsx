@@ -65,11 +65,29 @@ async function ensureCompanyWorkspace(session: Session, profile: AuthProfile): P
   const supabase = getSupabase();
   if (supabase && !profile.companyId) {
     try {
-      await supabase.rpc("repair_my_company_link");
-      const repaired = await loadAuthProfile(session);
-      if (repaired.companyId) return repaired;
+      const { data: ensured } = await supabase.rpc("ensure_my_courier_company", {
+        p_company_name:
+          typeof session.user.user_metadata?.company_name === "string"
+            ? session.user.user_metadata.company_name
+            : null,
+        p_phone: typeof session.user.user_metadata?.phone === "string" ? session.user.user_metadata.phone : null,
+        p_full_name:
+          typeof session.user.user_metadata?.full_name === "string"
+            ? session.user.user_metadata.full_name
+            : profile.fullName,
+      });
+      if (ensured) {
+        const repaired = await loadAuthProfile(session);
+        if (repaired.companyId) return repaired;
+      }
     } catch {
-      /* migration 25 optional */
+      try {
+        await supabase.rpc("repair_my_company_link");
+        const repaired = await loadAuthProfile(session);
+        if (repaired.companyId) return repaired;
+      } catch {
+        /* older DB */
+      }
     }
   }
 

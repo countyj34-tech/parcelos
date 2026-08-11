@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowRight, Package, Search, UserRound } from "lucide-react";
 import { FadeIn } from "@/components/motion/fade-in";
@@ -6,7 +7,10 @@ import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/portal/")({
   head: () => ({
-    meta: [{ title: "Send & track parcels" }, { name: "description", content: "Customer portal" }],
+    meta: [
+      { title: "Customer portal" },
+      { name: "description", content: "Official courier customer portal — send and track parcels." },
+    ],
   }),
   component: PortalHome,
 });
@@ -35,6 +39,10 @@ const ACTIONS = [
 function PortalHome() {
   const { tenant } = useTenant();
 
+  useEffect(() => {
+    document.title = `${tenant.name} — Customer portal`;
+  }, [tenant.name]);
+
   return (
     <div
       className="flex min-h-0 flex-1 flex-col items-center justify-center"
@@ -42,10 +50,28 @@ function PortalHome() {
     >
       <FadeIn className="flex w-full max-w-4xl flex-col gap-4 sm:gap-5 md:items-center md:gap-6 md:text-center">
         <div className="md:max-w-2xl">
-          <p className="text-xs font-medium tracking-wide text-white/70 sm:text-sm">{tenant.tagline}</p>
-          <h1 className="mt-1.5 font-display text-[1.5rem] font-bold leading-snug tracking-tight text-white sm:text-2xl md:text-3xl lg:text-4xl">
-            Send and track parcels with {tenant.name}
+          {tenant.logoUrl ? (
+            <img
+              src={tenant.logoUrl}
+              alt={tenant.name}
+              className="mb-4 h-16 w-16 rounded-2xl object-cover shadow-lg ring-2 ring-white/25 md:mx-auto md:h-20 md:w-20"
+            />
+          ) : (
+            <span
+              className="mb-4 grid h-16 w-16 place-items-center rounded-2xl text-xl font-bold shadow-lg ring-2 ring-white/25 md:mx-auto md:h-20 md:w-20 md:text-2xl"
+              style={{ background: "var(--tenant-primary)", color: "var(--tenant-primary-fg)" }}
+            >
+              {tenant.logoInitials}
+            </span>
+          )}
+          <h1 className="font-display text-[1.85rem] font-bold leading-tight tracking-tight text-white sm:text-3xl md:text-4xl lg:text-5xl">
+            {tenant.name}
           </h1>
+          <p className="mt-2 text-sm text-white/80 sm:text-base">
+            {tenant.tagline?.trim()
+              ? tenant.tagline
+              : "Send and track parcels with this courier — official customer portal."}
+          </p>
         </div>
 
         <div className="grid w-full grid-cols-1 gap-2.5 sm:gap-3 md:grid-cols-3 md:gap-4">
@@ -91,13 +117,13 @@ function PortalHome() {
         </div>
 
         <p className="text-xs text-white/65 sm:text-sm">
-          Need help?{" "}
+          Need help? Call {tenant.name}:{" "}
           <a
             href={`tel:${tenant.supportPhone.replace(/\s/g, "")}`}
             className="font-semibold text-white underline-offset-2 transition-colors hover:underline"
             style={{ textDecorationColor: "var(--tenant-primary)" }}
           >
-            {tenant.supportPhone}
+            {tenant.supportPhone || "support"}
           </a>
         </p>
       </FadeIn>

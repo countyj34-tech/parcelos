@@ -1,47 +1,116 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useTenant } from "@/hooks/use-tenant";
 import { useTenantPwaManifest } from "@/hooks/use-tenant-pwa-manifest";
+import { resolveCompanyPublic } from "@/lib/api/tenant";
 import { markCustomerPortalMode } from "@/lib/portal-mode";
+import { registerServiceWorker } from "@/lib/pwa";
+import type { TenantBranding } from "@/lib/tenant";
 
 /**
  * Customer entry from share link / QR.
- * Activates that company brand, then opens their customer portal.
+ * Shows the real courier company name + logo immediately, then opens their portal.
  */
 export const Route = createFileRoute("/c/$slug")({
   head: ({ params }) => ({
-    meta: [{ title: `Open portal — ${params.slug}` }],
+    meta: [
+      { title: `Courier portal — ${params.slug}` },
+      {
+        name: "description",
+        content: "Official customer portal for this courier company.",
+      },
+    ],
   }),
   component: CustomerTenantEntry,
 });
 
 function CustomerTenantEntry() {
   const { slug } = Route.useParams();
-  const { activateTenant, tenant } = useTenant();
+  const { activateTenant, updateTenant } = useTenant();
   const navigate = useNavigate();
   useTenantPwaManifest();
+  const [company, setCompany] = useState<TenantBranding | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    registerServiceWorker();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       markCustomerPortalMode();
-      await activateTenant(slug);
-      if (!cancelled) {
-        void navigate({ to: "/portal", replace: true });
+      const remote = await resolveCompanyPublic(slug);
+      if (cancelled) return;
+
+      if (!remote) {
+        setError("This courier link is not valid. Ask the company for their official portal link.");
+        return;
       }
+
+      setCompany(remote);
+      updateTenant(remote);
+      await activateTenant(remote.slug);
+      document.title = `${remote.name} — Customer portal`;
+
+      window.setTimeout(() => {
+        if (!cancelled) void navigate({ to: "/portal", replace: true });
+      }, 1200);
     })();
     return () => {
       cancelled = true;
     };
-  }, [slug, activateTenant, navigate]);
+  }, [slug, activateTenant, navigate, updateTenant]);
+
+  if (error) {
+    return (
+      <div className="grid min-h-svh place-items-center bg-background px-6 text-center">
+        <div className="max-w-sm space-y-2">
+          <p className="text-base font-semibold text-foreground">Courier not found</p>
+          <p className="text-sm text-muted-foreground">{error}</p>
+          <p className="font-mono text-xs text-muted-foreground">/c/{slug}</p>
+        </div>
+      </div>
+    );
+  }
+
+  const name = company?.name ?? "…";
+  const initials =
+    company?.logoInitials ??
+    name
+      .split(/\s+/)
+      .map((w) => w[0])
+      .join("")
+      .slice(0, 2)
+      .toUpperCase();
 
   return (
-    <div className="grid min-h-svh place-items-center bg-background px-6 text-center">
-      <div>
-        <p className="text-sm font-medium text-foreground">
-          Opening {tenant.slug === slug ? tenant.name : "your courier"} portal…
-        </p>
-        <p className="mt-1 text-xs text-muted-foreground">One moment</p>
+    <div
+      className="grid min-h-svh place-items-center px-6 text-center"
+      style={{
+        background: company
+          ? `linear-gradient(160deg, ${company.primaryColor} 0%, color-mix(in srgb, ${company.primaryColor} 55%, #0f172a) 100%)`
+          : "var(--background)",
+      }}
+    >
+      <div className="flex max-w-md flex-col items-center gap-4 text-white">
+        {company?.logoUrl ? (
+          <img
+            src={company.logoUrl}
+            alt={name}
+            className="h-24 w-24 rounded-2xl object-cover shadow-xl ring-2 ring-white/30"
+          />
+        ) : (
+          <span className="grid h-24 w-24 place-items-center rounded-2xl bg-white/15 text-3xl font-bold shadow-xl ring-2 ring-white/30">
+            {company ? initials : "…"}
+          </span>
+        )}
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">Official courier portal</p>
+          <h1 className="mt-2 font-display text-3xl font-bold tracking-tight sm:text-4xl">{name}</h1>
+          {company?.tagline ? <p className="mt-2 text-sm text-white/80">{company.tagline}</p> : null}
+        </div>
+        <p className="text-xs text-white/65">Opening {name}…</p>
       </div>
     </div>
   );

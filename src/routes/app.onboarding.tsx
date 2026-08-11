@@ -21,17 +21,54 @@ export const Route = createFileRoute("/app/onboarding")({
   component: BrandOnboardingPage,
 });
 
-async function resolveLinkedCompanyId(preferred: string | null | undefined): Promise<string | null> {
+async function resolveLinkedCompanyId(
+  preferred: string | null | undefined,
+  opts?: { companyName?: string; fullName?: string; phone?: string },
+): Promise<string | null> {
   if (isCompanyUuid(preferred)) return preferred;
   const supabase = getSupabase();
   if (!supabase) return null;
+
   try {
-    await supabase.rpc("repair_my_company_link");
+    const { data: repaired } = await supabase.rpc("repair_my_company_link");
+    if (isCompanyUuid(repaired as string)) return repaired as string;
+  } catch {
+    /* older DB */
+  }
+
+  const { data: existing } = await supabase.rpc("get_my_company_id");
+  if (isCompanyUuid(existing as string)) return existing as string;
+
+  // Create or claim workspace (migration 26) — also falls back to register_courier_company
+  try {
+    const { data: ensured, error } = await supabase.rpc("ensure_my_courier_company", {
+      p_company_name: opts?.companyName?.trim() || null,
+      p_phone: opts?.phone?.trim() || null,
+      p_full_name: opts?.fullName?.trim() || null,
+    });
+    if (!error && isCompanyUuid(ensured as string)) return ensured as string;
   } catch {
     /* optional */
   }
-  const { data } = await supabase.rpc("get_my_company_id");
-  return isCompanyUuid(data as string) ? (data as string) : null;
+
+  if (opts?.companyName?.trim()) {
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const sessionEmail = sessionData.session?.user?.email ?? "";
+      const { registerCourierCompany } = await import("@/lib/api/signup");
+      const { companyId } = await registerCourierCompany({
+        companyName: opts.companyName.trim(),
+        fullName: opts.fullName?.trim() || "Owner",
+        email: sessionEmail,
+        phone: opts.phone,
+      });
+      if (isCompanyUuid(companyId)) return companyId;
+    } catch (err) {
+      console.warn("[resolveLinkedCompanyId] register failed", err);
+    }
+  }
+
+  return null;
 }
 
 function BrandOnboardingPage() {
@@ -51,6 +88,8 @@ function BrandOnboardingPage() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [done, setDone] = useState(false);
+  const [linking, setLinking] = useState(false);
+  const [linkError, setLinkError] = useState<string | null>(null);
   const [linkedCompanyId, setLinkedCompanyId] = useState<string | null>(
     isCompanyUuid(companyId) ? companyId : isCompanyUuid(tenant.id) ? tenant.id : null,
   );
@@ -64,67 +103,111 @@ function BrandOnboardingPage() {
         ? tenant.id
         : null;
 
+  const reloadCompany = async (id: string) => {
+    const supabase = getSupabase();
+    if (!supabase || !isCompanyUuid(id)) return;
+    const { data } = await supabase
+      .from("companies")
+      .select(
+        "id, name, slug, code, tagline, logo_url, primary_color, secondary_color, hero_image_url, price_chart_url, support_phone, support_email, subdomain, tracking_domain, currency_code, country_code, status",
+      )
+      .eq("id", id)
+      .maybeSingle();
+    if (!data) return;
+    const mapped = mapPublicCompanyToTenant(data as PublicCompanyRow);
+    updateTenant(mapped);
+    if (mapped.slug) await activateTenant(mapped.slug);
+    setName(mapped.name);
+    setTagline(mapped.tagline);
+    setPrimary(mapped.primaryColor);
+    setAccent(mapped.accentColor);
+    setPhone(mapped.supportPhone);
+    setEmail(mapped.supportEmail);
+    if (!localLogoRef.current) {
+      setLogoUrl(mapped.logoUrl);
+      setDone(Boolean(mapped.logoUrl && mapped.name.trim()));
+    }
+  };
+
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       setLoading(true);
+      setLinkError(null);
       await refreshProfileAfterAuth().catch(() => undefined);
 
-      const supabase = getSupabase();
-      const id = await resolveLinkedCompanyId(companyId ?? profile?.companyId);
-      if (!cancelled && id) setLinkedCompanyId(id);
-
-      if (supabase && isCompanyUuid(id)) {
-        const { data } = await supabase
-          .from("companies")
-          .select(
-            "id, name, slug, code, tagline, logo_url, primary_color, secondary_color, hero_image_url, price_chart_url, support_phone, support_email, subdomain, tracking_domain, currency_code, country_code, status",
-          )
-          .eq("id", id)
-          .maybeSingle();
-
-        if (!cancelled && data) {
-          const mapped = mapPublicCompanyToTenant(data as PublicCompanyRow);
-          updateTenant(mapped);
-          if (mapped.slug) await activateTenant(mapped.slug);
-          setName(mapped.name);
-          setTagline(mapped.tagline);
-          setPrimary(mapped.primaryColor);
-          setAccent(mapped.accentColor);
-          setPhone(mapped.supportPhone);
-          setEmail(mapped.supportEmail);
-          if (!localLogoRef.current) {
-            setLogoUrl(mapped.logoUrl);
-            setDone(Boolean(mapped.logoUrl && mapped.name.trim()));
-          }
-          setLoading(false);
-          return;
-        }
-      }
-
-      if (!cancelled) {
-        const fallbackName =
-          (company && company !== "Swift Logistics" && company !== "Your company" ? company : "") ||
-          (profile?.companyName &&
-          profile.companyName !== "Swift Logistics" &&
-          profile.companyName !== "Your company"
+      const id = await resolveLinkedCompanyId(companyId ?? profile?.companyId, {
+        companyName:
+          (typeof profile?.companyName === "string" &&
+          profile.companyName !== "Your company" &&
+          profile.companyName !== "Swift Logistics"
             ? profile.companyName
-            : "");
-        setName(fallbackName);
-        setTagline("");
-        setPrimary("#0F766E");
-        setAccent("#F59E0B");
-        setPhone("");
-        setEmail("");
-        if (!localLogoRef.current) setLogoUrl(null);
+            : undefined) || undefined,
+        fullName: profile?.fullName,
+      });
+      if (cancelled) return;
+
+      if (id) {
+        setLinkedCompanyId(id);
+        await reloadCompany(id);
         setLoading(false);
+        return;
       }
+
+      const fallbackName =
+        (company && company !== "Swift Logistics" && company !== "Your company" ? company : "") ||
+        (profile?.companyName &&
+        profile.companyName !== "Swift Logistics" &&
+        profile.companyName !== "Your company"
+          ? profile.companyName
+          : "");
+      setName(fallbackName);
+      setTagline("");
+      setPrimary("#0F766E");
+      setAccent("#F59E0B");
+      setPhone("");
+      setEmail("");
+      if (!localLogoRef.current) setLogoUrl(null);
+      setLoading(false);
     })();
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companyId, profile?.companyId]);
+
+  const onLinkWorkspace = async () => {
+    if (!name.trim()) {
+      toast.error("Enter your company name first");
+      return;
+    }
+    setLinking(true);
+    setLinkError(null);
+    try {
+      const id = await resolveLinkedCompanyId(null, {
+        companyName: name.trim(),
+        fullName: profile?.fullName,
+        phone,
+      });
+      if (!id) {
+        setLinkError(
+          "Could not link a company. In Supabase SQL Editor run 20260312000026_ensure_company_workspace.sql, then try again.",
+        );
+        toast.error("Workspace still not linked");
+        return;
+      }
+      setLinkedCompanyId(id);
+      await refreshProfileAfterAuth().catch(() => undefined);
+      await reloadCompany(id);
+      toast.success("Company workspace linked");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Link failed";
+      setLinkError(msg);
+      toast.error(msg);
+    } finally {
+      setLinking(false);
+    }
+  };
 
   const onLogo = async (file: File | undefined) => {
     if (!file) return;
@@ -196,23 +279,28 @@ function BrandOnboardingPage() {
       return;
     }
 
-    updateTenant({
-      id: companyKey,
-      name: name.trim(),
-      tagline: tagline.trim(),
-      primaryColor: primary,
-      accentColor: accent,
-      supportPhone: phone.trim(),
-      supportEmail: email.trim(),
-      logoUrl,
-      logoInitials: name
-        .trim()
-        .split(/\s+/)
-        .map((w) => w[0])
-        .join("")
-        .slice(0, 2)
-        .toUpperCase(),
-    });
+    if (result.tenant) {
+      updateTenant(result.tenant);
+      if (result.tenant.slug) await activateTenant(result.tenant.slug);
+    } else {
+      updateTenant({
+        id: companyKey,
+        name: name.trim(),
+        tagline: tagline.trim(),
+        primaryColor: primary,
+        accentColor: accent,
+        supportPhone: phone.trim(),
+        supportEmail: email.trim(),
+        logoUrl,
+        logoInitials: name
+          .trim()
+          .split(/\s+/)
+          .map((w) => w[0])
+          .join("")
+          .slice(0, 2)
+          .toUpperCase(),
+      });
+    }
     await refreshProfileAfterAuth().catch(() => undefined);
     await refreshTenant();
     setDone(true);
@@ -242,11 +330,24 @@ function BrandOnboardingPage() {
             : "Customers only see your name, logo and colours. After this you can share your portal link or QR code."}
         </p>
         {!resolvedCompanyId ? (
-          <p className="mt-3 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-100">
-            Your company workspace is still linking. Apply migration{" "}
-            <code className="rounded bg-black/10 px-1">20260312000025_repair_company_link.sql</code> in Supabase,
-            then refresh or sign out and sign in again.
-          </p>
+          <div className="mt-3 space-y-3 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-3 text-sm text-amber-900 dark:text-amber-100">
+            <p>
+              Your login is not linked to a company yet. Git push does not apply SQL — run{" "}
+              <code className="rounded bg-black/10 px-1">20260312000026_ensure_company_workspace.sql</code> in
+              Supabase SQL Editor, type your company name below, then click <strong>Link workspace</strong>.
+            </p>
+            {linkError ? <p className="text-destructive">{linkError}</p> : null}
+            <Button
+              type="button"
+              variant="outline"
+              className="rounded-xl border-amber-600/40 bg-background"
+              disabled={linking || !name.trim()}
+              onClick={() => void onLinkWorkspace()}
+            >
+              {linking ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Link workspace
+            </Button>
+          </div>
         ) : null}
       </div>
 
