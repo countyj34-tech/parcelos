@@ -66,41 +66,41 @@ Configured automatically via Supabase Auth. Users click **Forgot password?** on 
 
 Redirect URL must include your app URL in Supabase → Authentication → URL Configuration.
 
-## 6. Email confirmation (“site can’t be reached” on confirm link)
+## 6. Instant signup (no email confirmation)
 
-When a company signs up at `/signup`, Supabase sends a confirm email. The link verifies the user, then **redirects to your app** (usually `/login`). If that redirect URL is wrong, the phone/browser shows **site can’t be reached**.
+Company signup at `/signup` creates a **confirmed** Auth user immediately (via `signup-courier` edge function), signs them in, and provisions the company. No “confirm your email” click.
 
-### Fix (Supabase Dashboard)
+### Required: turn off Confirm email in Supabase (hosted)
 
-1. Open **Authentication** → **URL Configuration**
-2. Set **Site URL** to your **live** app URL (not localhost), e.g.  
-   `https://your-app.netlify.app` or your Lovable publish URL
-3. Under **Redirect URLs**, add (replace with your real domain):
-   ```
-   https://your-app.netlify.app/**
-   https://your-app.netlify.app/login
-   http://localhost:3000/**
-   http://localhost:3000/login
-   ```
-4. Save
+1. Supabase Dashboard → **Authentication** → **Providers** → **Email**
+2. Turn **Confirm email** **OFF**
+3. Save
 
-### Fix (deploy env)
+This stops broken/missing confirm emails and matches the instant-onboarding product flow.
 
-In Netlify / Lovable environment variables, set:
+### Deploy signup function
 
-```env
-VITE_APP_URL=https://your-app.netlify.app
+```bash
+supabase functions deploy signup-courier
 ```
 
-Redeploy after changing env vars.
+### Optional congratulations email
 
-### Why it happens
+Set Edge Function secrets:
 
-- Supabase **Site URL** was left at `http://127.0.0.1:3000` or `http://localhost:3000`
-- Your live domain is **not** in **Redirect URLs**, so Supabase falls back to Site URL
-- You open the email on your **phone**, which cannot reach `localhost` on your laptop
+```bash
+supabase secrets set RESEND_API_KEY=re_...
+supabase secrets set RESEND_FROM_EMAIL="ParcelOS <hello@your-domain.com>"
+supabase secrets set APP_URL=https://your-app.netlify.app
+```
 
-After fixing, **sign up again** (or resend confirmation from Supabase → Authentication → Users) and tap the new link.
+Without Resend, signup still works — only the welcome email is skipped.
+
+### Auth URL config (password reset / magic links)
+
+1. **Authentication** → **URL Configuration**
+2. **Site URL** = your live app URL
+3. **Redirect URLs** include your live domain and `http://localhost:8080/**` for local dev
 
 ## 7. Row Level Security
 

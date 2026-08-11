@@ -1,5 +1,4 @@
 import { getSupabase } from "@/lib/supabase/client";
-import { getAuthRedirectPath } from "@/lib/supabase/config";
 
 export type RegisterCompanyInput = {
   companyName: string;
@@ -31,13 +30,13 @@ export type SignUpCompanyInput = RegisterCompanyInput & {
 };
 
 /**
- * Creates Auth user, then company workspace.
- * If email confirmation is required (no session yet), company is created on first successful sign-in
- * using user_metadata — see ensureCompanyForSession in use-auth.
+ * Creates Auth user (already confirmed — no email click), signs them in, then provisions the company.
+ * Optional congrats email is sent by the signup-courier edge function when Resend is configured.
  */
 export async function signUpCourierCompany(input: SignUpCompanyInput): Promise<{
   needsEmailConfirmation: boolean;
   companyId?: string;
+  welcomeEmailSent?: boolean;
 }> {
   const supabase = getSupabase();
   if (!supabase) throw new Error("Supabase is not configured");
@@ -45,6 +44,7 @@ export async function signUpCourierCompany(input: SignUpCompanyInput): Promise<{
   const email = input.email.trim().toLowerCase();
   const fullName = input.fullName.trim();
   const companyName = input.companyName.trim();
+  const phone = input.phone?.trim() ?? "";
 
   if (!email || !input.password || !fullName || !companyName) {
     throw new Error("All required fields must be filled");
@@ -53,32 +53,72 @@ export async function signUpCourierCompany(input: SignUpCompanyInput): Promise<{
     throw new Error("Password must be at least 8 characters");
   }
 
-  const { data, error } = await supabase.auth.signUp({
-    email,
-    password: input.password,
-    options: {
-      data: {
-        full_name: fullName,
-        company_name: companyName,
-        phone: input.phone?.trim() ?? "",
-        pending_company: true,
-      },
-      emailRedirectTo: getAuthRedirectPath("/login"),
+  const base = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+  const anon = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+  if (!base || !anon) throw new Error("Missing Supabase URL");
+
+  // Prefer edge signup: creates a confirmed Auth user (no confirm-email wait)
+  let welcomeEmailSent = false;
+  const edgeRes = await fetch(`${base}/functions/v1/signup-courier`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: anon,
+      Authorization: `Bearer ${anon}`,
     },
+    body: JSON.stringify({
+      email,
+      password: input.password,
+      full_name: fullName,
+      company_name: companyName,
+      phone,
+    }),
   });
 
-  if (error) throw new Error(error.message);
+  const edgeJson = (await edgeRes.json().catch(() => ({}))) as {
+    error?: string;
+    welcome_email_sent?: boolean;
+  };
 
-  if (!data.session) {
-    return { needsEmailConfirmation: true };
+  if (edgeRes.ok) {
+    welcomeEmailSent = Boolean(edgeJson.welcome_email_sent);
+  } else {
+    // Fallback: native signUp (works if Confirm email is off in Supabase Auth settings)
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password: input.password,
+      options: {
+        data: {
+          full_name: fullName,
+          company_name: companyName,
+          phone,
+          pending_company: true,
+        },
+      },
+    });
+    if (error) {
+      throw new Error(edgeJson.error || error.message);
+    }
+    if (!data.session) {
+      // Confirm-email still enabled and edge function not deployed
+      throw new Error(
+        "Account needs email confirmation. Deploy the signup-courier function or turn off Confirm email in Supabase → Authentication → Providers → Email.",
+      );
+    }
   }
+
+  const { error: signInError } = await supabase.auth.signInWithPassword({
+    email,
+    password: input.password,
+  });
+  if (signInError) throw new Error(signInError.message);
 
   const { companyId } = await registerCourierCompany({
     companyName,
     fullName,
     email,
-    phone: input.phone,
+    phone: phone || undefined,
   });
 
-  return { needsEmailConfirmation: false, companyId };
+  return { needsEmailConfirmation: false, companyId, welcomeEmailSent };
 }

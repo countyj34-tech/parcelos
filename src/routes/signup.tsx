@@ -98,15 +98,17 @@ function SignupPage() {
       });
 
       if (result.needsEmailConfirmation) {
-        toast.success("Check your email to confirm your account", {
-          description: "After confirming, sign in — your company workspace will be ready.",
-        });
+        toast.success("Account created — sign in to continue");
         void navigate({ to: "/login" });
         return;
       }
 
       await refreshProfileAfterAuth();
-      toast.success("Account created — set up your brand next");
+      toast.success(
+        result.welcomeEmailSent
+          ? "Welcome! Check your inbox for a congratulations email"
+          : "Account created — set up your brand next",
+      );
       void navigate({ to: "/app/onboarding" });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not create account");
