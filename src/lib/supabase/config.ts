@@ -29,8 +29,27 @@ export function getSupabaseEnv(): SupabaseEnv | null {
   return {
     url: import.meta.env.VITE_SUPABASE_URL as string,
     anonKey: import.meta.env.VITE_SUPABASE_ANON_KEY as string,
-    appUrl: (import.meta.env.VITE_APP_URL as string | undefined) ?? "http://localhost:3000",
+    appUrl: getAuthRedirectBase(),
     platformOwnerEmail:
       (import.meta.env.VITE_PLATFORM_OWNER_EMAIL as string | undefined) ?? "admin@mthunzi.tech",
   };
+}
+
+/**
+ * Where Supabase should send users after email confirm / password reset.
+ * Prefer the live browser origin so phone email links never bounce to localhost.
+ * Must also be listed in Supabase → Authentication → URL Configuration → Redirect URLs.
+ */
+export function getAuthRedirectBase(): string {
+  if (typeof window !== "undefined" && window.location?.origin?.startsWith("http")) {
+    return window.location.origin.replace(/\/$/, "");
+  }
+  const fromEnv = import.meta.env.VITE_APP_URL as string | undefined;
+  if (fromEnv?.trim()) return fromEnv.trim().replace(/\/$/, "");
+  return "http://localhost:3000";
+}
+
+export function getAuthRedirectPath(path = "/login"): string {
+  const normalized = path.startsWith("/") ? path : `/${path}`;
+  return `${getAuthRedirectBase()}${normalized}`;
 }

@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { getSupabase } from "@/lib/supabase/client";
-import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { isSupabaseConfigured, getAuthRedirectPath } from "@/lib/supabase/config";
 import { demoProfile, loadAuthProfile, type AuthProfile } from "@/lib/auth/load-profile";
 import { registerCourierCompany } from "@/lib/api/signup";
 import { type UserRole, ROLE_USERS, getHomeRouteForRole } from "@/lib/roles";
@@ -177,9 +177,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const supabase = getSupabase();
     if (!supabase) return { error: "Supabase not configured" };
 
-    const env = import.meta.env.VITE_APP_URL ?? window.location.origin;
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${env}/login`,
+      redirectTo: getAuthRedirectPath("/login"),
     });
 
     return error ? { error: error.message } : {};

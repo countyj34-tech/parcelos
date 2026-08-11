@@ -1,4 +1,5 @@
 import { getSupabase } from "@/lib/supabase/client";
+import { getAuthRedirectPath } from "@/lib/supabase/config";
 
 export type RegisterCompanyInput = {
   companyName: string;
@@ -62,7 +63,7 @@ export async function signUpCourierCompany(input: SignUpCompanyInput): Promise<{
         phone: input.phone?.trim() ?? "",
         pending_company: true,
       },
-      emailRedirectTo: `${import.meta.env.VITE_APP_URL ?? window.location.origin}/login`,
+      emailRedirectTo: getAuthRedirectPath("/login"),
     },
   });
 
