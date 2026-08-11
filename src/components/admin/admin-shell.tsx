@@ -208,7 +208,9 @@ export function AdminShell({
                 {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
               </Button>
               <Button asChild variant="ghost" size="icon" className="relative">
-                <Link to="/admin" search={{ section: "notifications" }}><Bell className="h-4 w-4" /><span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-accent" /></Link>
+                <Link to="/admin" search={{ section: "notifications" }} aria-label="Notifications">
+                  <Bell className="h-4 w-4" />
+                </Link>
               </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>

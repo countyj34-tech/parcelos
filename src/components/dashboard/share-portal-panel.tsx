@@ -4,22 +4,61 @@ import { Check, Copy, Download, ExternalLink, MessageCircle, QrCode } from "luci
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useAuth } from "@/hooks/use-auth";
 import { useTenant } from "@/hooks/use-tenant";
+import { copyToClipboard } from "@/lib/clipboard";
 import {
   getCustomerPortalUrl,
   getPublicPortalLabel,
   getWhatsAppShareUrl,
+  type TenantBranding,
 } from "@/lib/tenant";
 import { toast } from "sonner";
 
+function shareTenant(
+  tenant: TenantBranding,
+  companyName: string | undefined,
+  companySlug: string | null | undefined,
+): TenantBranding {
+  const name = tenant.name && tenant.name !== "Swift Logistics" ? tenant.name : companyName || tenant.name;
+  const slug =
+    tenant.slug && tenant.slug !== "swift-logistics"
+      ? tenant.slug
+      : companySlug?.trim().toLowerCase() || tenant.slug;
+  const domain =
+    tenant.domain && !tenant.domain.startsWith("swiftlogistics.")
+      ? tenant.domain
+      : `${slug}.parcelos.africa`;
+  return {
+    ...tenant,
+    name: name || tenant.name,
+    slug: slug || tenant.slug,
+    domain,
+    logoInitials:
+      (name || tenant.name)
+        .split(/\s+/)
+        .map((w) => w[0])
+        .join("")
+        .slice(0, 2)
+        .toUpperCase() || tenant.logoInitials,
+  };
+}
+
 export function SharePortalPanel({ compact }: { compact?: boolean }) {
-  const { tenant } = useTenant();
+  const { tenant, refreshTenant } = useTenant();
+  const { company, profile, companyId } = useAuth();
+  const share = shareTenant(tenant, company || profile?.companyName, profile?.companySlug);
   const [portalUrl, setPortalUrl] = useState("");
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    const url = getCustomerPortalUrl(tenant);
+    if (companyId) void refreshTenant();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companyId]);
+
+  useEffect(() => {
+    const url = getCustomerPortalUrl(share);
     setPortalUrl(url);
     let cancelled = false;
     void QRCode.toDataURL(url, {
@@ -33,24 +72,32 @@ export function SharePortalPanel({ compact }: { compact?: boolean }) {
     return () => {
       cancelled = true;
     };
-  }, [tenant]);
+  }, [share.slug, share.name, share.domain]);
 
   const copyLink = async () => {
-    try {
-      await navigator.clipboard.writeText(portalUrl);
+    const ok = await copyToClipboard(portalUrl);
+    if (ok) {
       setCopied(true);
-      toast.success("Portal link copied");
+      toast.success("Portal link copied — send it to customers");
       window.setTimeout(() => setCopied(false), 2000);
-    } catch {
-      toast.error("Could not copy link");
+      return;
     }
+    // Last resort: select the input so user can Ctrl+C
+    const input = document.querySelector<HTMLInputElement>("[data-portal-link-input]");
+    if (input) {
+      input.focus();
+      input.select();
+      toast.message("Press Ctrl+C (or Cmd+C) to copy the selected link");
+      return;
+    }
+    toast.error("Could not copy automatically — long-press the link and copy it");
   };
 
   const downloadQr = () => {
     if (!qrDataUrl) return;
     const a = document.createElement("a");
     a.href = qrDataUrl;
-    a.download = `${tenant.slug}-portal-qr.png`;
+    a.download = `${share.slug}-portal-qr.png`;
     a.click();
     toast.success("QR code downloaded");
   };
@@ -62,7 +109,7 @@ export function SharePortalPanel({ compact }: { compact?: boolean }) {
           <div>
             <h3 className="text-base font-semibold">Share your customer portal</h3>
             <p className="mt-1 text-sm text-muted-foreground">
-              Customers who open this link or scan the QR only see {tenant.name} — send, track, and rates for your
+              Customers who open this link or scan the QR only see {share.name} — send, track, and rates for your
               company alone.
             </p>
           </div>
@@ -71,16 +118,22 @@ export function SharePortalPanel({ compact }: { compact?: boolean }) {
         <div className="space-y-2">
           <Label>Customer link</Label>
           <div className="flex flex-col gap-2 sm:flex-row">
-            <Input readOnly value={portalUrl} className="h-11 rounded-xl font-mono text-xs sm:text-sm" />
+            <Input
+              readOnly
+              data-portal-link-input
+              value={portalUrl}
+              onFocus={(e) => e.currentTarget.select()}
+              className="h-11 rounded-xl font-mono text-xs sm:text-sm"
+            />
             <Button type="button" variant="outline" className="h-11 shrink-0 rounded-xl" onClick={() => void copyLink()}>
               {copied ? <Check className="mr-1.5 h-4 w-4" /> : <Copy className="mr-1.5 h-4 w-4" />}
               {copied ? "Copied" : "Copy"}
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">
-            Public brand address: <span className="font-medium text-foreground">{getPublicPortalLabel(tenant)}</span>
+            Public brand address: <span className="font-medium text-foreground">{getPublicPortalLabel(share)}</span>
             {" · "}
-            Link works on this device for demos and WhatsApp sharing.
+            Path: <span className="font-mono text-foreground">/c/{share.slug}</span>
           </p>
         </div>
 
@@ -89,7 +142,7 @@ export function SharePortalPanel({ compact }: { compact?: boolean }) {
             <Copy className="mr-1.5 h-4 w-4" /> Copy link
           </Button>
           <Button type="button" variant="outline" className="rounded-xl" asChild>
-            <a href={getWhatsAppShareUrl(tenant, portalUrl)} target="_blank" rel="noreferrer">
+            <a href={getWhatsAppShareUrl(share, portalUrl)} target="_blank" rel="noreferrer">
               <MessageCircle className="mr-1.5 h-4 w-4" /> Share on WhatsApp
             </a>
           </Button>
@@ -117,7 +170,7 @@ export function SharePortalPanel({ compact }: { compact?: boolean }) {
           <QrCode className="h-3.5 w-3.5" /> Portal QR
         </div>
         {qrDataUrl ? (
-          <img src={qrDataUrl} alt={`${tenant.name} portal QR code`} className="h-48 w-48 rounded-xl bg-white" />
+          <img src={qrDataUrl} alt={`${share.name} portal QR code`} className="h-48 w-48 rounded-xl bg-white" />
         ) : (
           <div className="grid h-48 w-48 place-items-center rounded-xl bg-muted text-xs text-muted-foreground">
             Generating…

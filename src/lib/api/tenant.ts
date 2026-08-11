@@ -71,6 +71,29 @@ export async function resolveCompanyPublic(key: string): Promise<TenantBranding 
   return mapPublicCompanyToTenant(row);
 }
 
+/** Load branding for the signed-in company by UUID (dashboard share/QR). */
+export async function resolveCompanyById(companyId: string): Promise<TenantBranding | null> {
+  if (!isSupabaseConfigured()) return null;
+  const supabase = getSupabase();
+  if (!supabase || !companyId) return null;
+
+  const { data, error } = await supabase
+    .from("companies")
+    .select(
+      "id, name, slug, code, tagline, logo_url, primary_color, secondary_color, hero_image_url, price_chart_url, support_phone, support_email, subdomain, tracking_domain, currency_code, country_code, status",
+    )
+    .eq("id", companyId)
+    .eq("soft_delete", false)
+    .maybeSingle();
+
+  if (error) {
+    console.warn("[resolveCompanyById]", error.message);
+    return null;
+  }
+  if (!data) return null;
+  return mapPublicCompanyToTenant(data as PublicCompanyRow);
+}
+
 export async function isCompanyLockedRemote(companyId: string): Promise<boolean | null> {
   if (!isSupabaseConfigured()) return null;
   const supabase = getSupabase();

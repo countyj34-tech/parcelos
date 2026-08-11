@@ -6,6 +6,20 @@ import { demoProfile, loadAuthProfile, type AuthProfile } from "@/lib/auth/load-
 import { registerCourierCompany } from "@/lib/api/signup";
 import { type UserRole, ROLE_USERS, getHomeRouteForRole } from "@/lib/roles";
 
+function nameFromEmail(email: string): string {
+  const local = email.split("@")[0] ?? "User";
+  return local.replace(/[._-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()).trim() || "User";
+}
+
+function initialsFrom(name: string): string {
+  return name
+    .split(/\s+/)
+    .map((w) => w[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+}
+
 const DEMO_ROLE_KEY = "parcelos-role";
 const SUPER_ADMIN_DEVICE_KEY = "parcelos-super-admin-device";
 
@@ -46,7 +60,20 @@ function readDemoRole(): UserRole {
 
 /** After email confirmation / first login — finish company provisioning from signup metadata. */
 async function ensureCompanyWorkspace(session: Session, profile: AuthProfile): Promise<AuthProfile> {
-  if (profile.isPlatformOwner || profile.isCustomer || profile.companyId) return profile;
+  if (profile.isPlatformOwner || profile.isCustomer) return profile;
+
+  const supabase = getSupabase();
+  if (supabase && !profile.companyId) {
+    try {
+      await supabase.rpc("repair_my_company_link");
+      const repaired = await loadAuthProfile(session);
+      if (repaired.companyId) return repaired;
+    } catch {
+      /* migration 25 optional */
+    }
+  }
+
+  if (profile.companyId) return profile;
 
   const meta = session.user.user_metadata ?? {};
   const companyName = typeof meta.company_name === "string" ? meta.company_name.trim() : "";
@@ -59,7 +86,18 @@ async function ensureCompanyWorkspace(session: Session, profile: AuthProfile): P
       email: session.user.email ?? profile.email,
       phone: typeof meta.phone === "string" ? meta.phone : undefined,
     });
-    return await loadAuthProfile(session);
+    const next = await loadAuthProfile(session);
+    try {
+      if (supabase && next.companyId) {
+        await supabase.rpc("notify_company_welcome", {
+          p_company_id: next.companyId,
+          p_user_id: session.user.id,
+        });
+      }
+    } catch {
+      /* optional until migration 24 */
+    }
+    return next;
   } catch (err) {
     console.error("[AuthProvider] register company failed:", err);
     return profile;
@@ -194,6 +232,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const role = profile?.role ?? "Company Admin";
+  const sessionEmail = session?.user?.email ?? user?.email ?? "";
+  const liveName =
+    profile?.fullName ||
+    (typeof session?.user?.user_metadata?.full_name === "string"
+      ? session.user.user_metadata.full_name
+      : "") ||
+    (sessionEmail ? nameFromEmail(sessionEmail) : "");
 
   const value = useMemo<AuthContextValue>(
     () => ({
@@ -205,13 +250,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isCustomer: profile?.isCustomer ?? false,
       profile,
       role,
-      user: {
-        name: profile?.fullName ?? ROLE_USERS[role].name,
-        email: profile?.email ?? ROLE_USERS[role].email,
-        initials: profile?.initials ?? ROLE_USERS[role].initials,
-        branch: profile?.branch ?? ROLE_USERS[role].branch,
-      },
-      company: profile?.companyName ?? "Swift Logistics",
+      user: isDemoMode
+        ? {
+            name: profile?.fullName ?? ROLE_USERS[role].name,
+            email: profile?.email ?? ROLE_USERS[role].email,
+            initials: profile?.initials ?? ROLE_USERS[role].initials,
+            branch: profile?.branch ?? ROLE_USERS[role].branch,
+          }
+        : {
+            name: liveName || "User",
+            email: profile?.email || sessionEmail || "",
+            initials: profile?.initials || initialsFrom(liveName || "U"),
+            branch: profile?.branch || "All Branches",
+          },
+      company: isDemoMode
+        ? (profile?.companyName ?? "Swift Logistics")
+        : (profile?.companyName ?? "Your company"),
       companyId: profile?.companyId ?? null,
       signIn,
       signOut,
@@ -221,6 +275,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }),
     [
       session,
+      user,
+      sessionEmail,
+      liveName,
       isLoading,
       isDemoMode,
       profile,

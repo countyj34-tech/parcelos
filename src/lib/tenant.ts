@@ -122,7 +122,9 @@ export function getCustomerPortalUrl(tenant: TenantBranding, origin?: string): s
 
 /** Pretty domain companies show on posters (subdomain branding). */
 export function getPublicPortalLabel(tenant: TenantBranding): string {
-  return tenant.domain;
+  if (tenant.domain && !tenant.domain.includes("swiftlogistics")) return tenant.domain;
+  if (tenant.slug && tenant.slug !== "swift-logistics") return `${tenant.slug}.parcelos.africa`;
+  return tenant.domain || `${tenant.slug}.parcelos.africa`;
 }
 
 export function getWhatsAppShareText(tenant: TenantBranding, portalUrl: string): string {

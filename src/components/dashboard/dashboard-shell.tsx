@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   Bell,
@@ -46,6 +46,7 @@ import { useTheme } from "@/hooks/use-theme";
 import { useAuth } from "@/hooks/use-auth";
 import { canAccessRoute, DEMO_ROLES, getHomeRouteForRole, getNavForRole, type UserRole } from "@/lib/roles";
 import { useBranchNames } from "@/hooks/use-parcels";
+import { countUnreadNotifications, onNotificationsChanged } from "@/lib/api/notifications";
 import { cn } from "@/lib/utils";
 
 const ICONS: Record<string, typeof Gauge> = {
@@ -104,10 +105,12 @@ function SidebarNav({
 
 export function DashboardShell({ children }: { children: ReactNode }) {
   const { theme, toggle } = useTheme();
-  const { role, setDemoRole, user, signOut, isDemoMode, companyId } = useAuth();
+  const { role, setDemoRole, user, signOut, isDemoMode, companyId, isLoading } = useAuth();
   const navigate = useNavigate();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const [unread, setUnread] = useState(0);
   const { data: liveBranches = [] } = useBranchNames(companyId);
   const branchOptions =
     liveBranches.length > 0
@@ -119,10 +122,37 @@ export function DashboardShell({ children }: { children: ReactNode }) {
     user.branch === "All Branches" ? "All Branches" : user.branch || "All Branches",
   );
 
+  useEffect(() => {
+    if (isDemoMode) {
+      setUnread(0);
+      return;
+    }
+    let cancelled = false;
+    const load = () => {
+      void countUnreadNotifications().then((n) => {
+        if (!cancelled) setUnread(n);
+      });
+    };
+    load();
+    const onFocus = () => load();
+    window.addEventListener("focus", onFocus);
+    const unsub = onNotificationsChanged(load);
+    const id = window.setInterval(load, 60_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+      window.removeEventListener("focus", onFocus);
+      unsub();
+    };
+  }, [isDemoMode, companyId, user.email, pathname]);
+
   const switchDemoRole = (next: UserRole) => {
     setDemoRole(next);
     void navigate({ to: getHomeRouteForRole(next) });
   };
+
+  const displayName = isLoading && !isDemoMode ? "…" : user.name;
+  const displayInitials = isLoading && !isDemoMode ? "…" : user.initials;
 
   return (
     <div className="flex min-h-screen w-full bg-surface">
@@ -209,9 +239,13 @@ export function DashboardShell({ children }: { children: ReactNode }) {
               </Button>
 
               <Button asChild variant="ghost" size="icon" className="relative">
-                <Link to="/app/notifications">
+                <Link to="/app/notifications" aria-label={unread ? `${unread} unread notifications` : "Notifications"}>
                   <Bell className="h-4 w-4" />
-                  <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-accent" />
+                  {unread > 0 ? (
+                    <span className="absolute right-1.5 top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[10px] font-bold text-accent-foreground">
+                      {unread > 9 ? "9+" : unread}
+                    </span>
+                  ) : null}
                 </Link>
               </Button>
 
@@ -219,10 +253,10 @@ export function DashboardShell({ children }: { children: ReactNode }) {
                 <DropdownMenuTrigger asChild>
                   <button className="flex items-center gap-2 rounded-xl border border-border bg-card px-2 py-1.5 hover:bg-muted">
                     <Avatar className="h-8 w-8">
-                      <AvatarFallback className="bg-primary text-xs text-primary-foreground">{user.initials}</AvatarFallback>
+                      <AvatarFallback className="bg-primary text-xs text-primary-foreground">{displayInitials}</AvatarFallback>
                     </Avatar>
                     <span className="hidden text-left sm:block">
-                      <span className="block text-xs font-semibold">{user.name}</span>
+                      <span className="block text-xs font-semibold">{displayName}</span>
                       <span className="block text-[11px] text-muted-foreground">{role}</span>
                     </span>
                   </button>

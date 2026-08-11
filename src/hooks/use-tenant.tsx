@@ -8,7 +8,9 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { resolveCompanyPublic } from "@/lib/api/tenant";
+import { useAuth } from "@/hooks/use-auth";
+import { isCompanyUuid } from "@/lib/api/company-brand";
+import { resolveCompanyById, resolveCompanyPublic } from "@/lib/api/tenant";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import {
   DEMO_TENANT,
@@ -30,28 +32,73 @@ type TenantContextValue = {
 
 const TenantContext = createContext<TenantContextValue | null>(null);
 
+function isDemoTenant(t: TenantBranding): boolean {
+  return t.id === DEMO_TENANT.id || t.slug === DEMO_TENANT.slug;
+}
+
 export function TenantProvider({ children }: { children: ReactNode }) {
+  const { companyId, profile, isDemoMode, isLoading: authLoading } = useAuth();
   const [tenant, setTenant] = useState<TenantBranding>(() => resolveTenantFromHost());
 
   const refreshTenant = useCallback(async () => {
-    const slug = getActiveTenantSlug();
-    if (isSupabaseConfigured()) {
+    // Prefer the signed-in company — never silently fall back to Swift demo.
+    if (isSupabaseConfigured() && isCompanyUuid(companyId)) {
+      const byId = await resolveCompanyById(companyId);
+      if (byId) {
+        setActiveTenantSlug(byId.slug);
+        setTenant(byId);
+        return;
+      }
+    }
+
+    const slugFromProfile = profile?.companySlug?.trim().toLowerCase();
+    const slug = slugFromProfile || getActiveTenantSlug();
+
+    if (isSupabaseConfigured() && slug && slug !== DEMO_TENANT.slug) {
       const remote = await resolveCompanyPublic(slug);
       if (remote) {
+        setActiveTenantSlug(remote.slug);
         setTenant(remote);
         return;
       }
     }
-    setTenant(resolveTenantFromHost());
-  }, []);
+
+    if (isDemoMode) {
+      setTenant(resolveTenantFromHost());
+      return;
+    }
+
+    // Keep whatever we already have if remote lookup failed (don't wipe MTZ → Swift).
+    setTenant((prev) => {
+      if (!isDemoTenant(prev)) return prev;
+      if (slugFromProfile && profile?.companyName) {
+        return {
+          ...DEMO_TENANT,
+          id: companyId ?? prev.id,
+          slug: slugFromProfile,
+          name: profile.companyName,
+          logoInitials: profile.companyName
+            .split(/\s+/)
+            .map((w) => w[0])
+            .join("")
+            .slice(0, 2)
+            .toUpperCase(),
+          domain: `${slugFromProfile}.parcelos.africa`,
+        };
+      }
+      return prev;
+    });
+  }, [companyId, profile?.companySlug, profile?.companyName, isDemoMode]);
 
   useEffect(() => {
+    if (authLoading && !isDemoMode) return;
     void refreshTenant();
-  }, [refreshTenant]);
+  }, [refreshTenant, authLoading, isDemoMode]);
 
   const updateTenant = useCallback((patch: Partial<TenantBranding>) => {
     setTenant((prev) => {
       const next = { ...prev, ...patch };
+      if (next.slug) setActiveTenantSlug(next.slug);
       if (!isSupabaseConfigured()) {
         saveTenantOverrides(next);
       }
@@ -69,6 +116,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
         setTenant(remote);
         return true;
       }
+      // Don't revert to demo when slug is known but RPC isn't ready yet
       return false;
     }
 

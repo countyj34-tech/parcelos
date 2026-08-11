@@ -172,5 +172,19 @@ export async function signUpCourierCompany(input: SignUpCompanyInput): Promise<{
     phone: phone || undefined,
   });
 
+  // Real welcome notification (ignore if migration not applied yet)
+  try {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const uid = sessionData.session?.user?.id;
+    if (uid && companyId) {
+      await supabase.rpc("notify_company_welcome", {
+        p_company_id: companyId,
+        p_user_id: uid,
+      });
+    }
+  } catch {
+    /* optional */
+  }
+
   return { needsEmailConfirmation: false, companyId, welcomeEmailSent };
 }

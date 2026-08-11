@@ -21,8 +21,21 @@ export const Route = createFileRoute("/app/onboarding")({
   component: BrandOnboardingPage,
 });
 
+async function resolveLinkedCompanyId(preferred: string | null | undefined): Promise<string | null> {
+  if (isCompanyUuid(preferred)) return preferred;
+  const supabase = getSupabase();
+  if (!supabase) return null;
+  try {
+    await supabase.rpc("repair_my_company_link");
+  } catch {
+    /* optional */
+  }
+  const { data } = await supabase.rpc("get_my_company_id");
+  return isCompanyUuid(data as string) ? (data as string) : null;
+}
+
 function BrandOnboardingPage() {
-  const { companyId, company, refreshProfileAfterAuth } = useAuth();
+  const { companyId, company, profile, refreshProfileAfterAuth } = useAuth();
   const { tenant, updateTenant, refreshTenant, activateTenant } = useTenant();
   const navigate = useNavigate();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -38,13 +51,18 @@ function BrandOnboardingPage() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [done, setDone] = useState(false);
+  const [linkedCompanyId, setLinkedCompanyId] = useState<string | null>(
+    isCompanyUuid(companyId) ? companyId : isCompanyUuid(tenant.id) ? tenant.id : null,
+  );
   const localLogoRef = useRef<string | null>(null);
 
-  const resolvedCompanyId = isCompanyUuid(companyId)
-    ? companyId
-    : isCompanyUuid(tenant.id)
-      ? tenant.id
-      : null;
+  const resolvedCompanyId = isCompanyUuid(linkedCompanyId)
+    ? linkedCompanyId
+    : isCompanyUuid(companyId)
+      ? companyId
+      : isCompanyUuid(tenant.id)
+        ? tenant.id
+        : null;
 
   useEffect(() => {
     let cancelled = false;
@@ -53,7 +71,9 @@ function BrandOnboardingPage() {
       await refreshProfileAfterAuth().catch(() => undefined);
 
       const supabase = getSupabase();
-      const id = companyId;
+      const id = await resolveLinkedCompanyId(companyId ?? profile?.companyId);
+      if (!cancelled && id) setLinkedCompanyId(id);
+
       if (supabase && isCompanyUuid(id)) {
         const { data } = await supabase
           .from("companies")
@@ -73,10 +93,9 @@ function BrandOnboardingPage() {
           setAccent(mapped.accentColor);
           setPhone(mapped.supportPhone);
           setEmail(mapped.supportEmail);
-          // Don't wipe a logo the user just uploaded if the effect re-runs
           if (!localLogoRef.current) {
             setLogoUrl(mapped.logoUrl);
-            setDone(Boolean(mapped.logoUrl));
+            setDone(Boolean(mapped.logoUrl && mapped.name.trim()));
           }
           setLoading(false);
           return;
@@ -84,7 +103,14 @@ function BrandOnboardingPage() {
       }
 
       if (!cancelled) {
-        setName(company && company !== "Swift Logistics" ? company : "");
+        const fallbackName =
+          (company && company !== "Swift Logistics" && company !== "Your company" ? company : "") ||
+          (profile?.companyName &&
+          profile.companyName !== "Swift Logistics" &&
+          profile.companyName !== "Your company"
+            ? profile.companyName
+            : "");
+        setName(fallbackName);
         setTagline("");
         setPrimary("#0F766E");
         setAccent("#F59E0B");
@@ -98,25 +124,26 @@ function BrandOnboardingPage() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [companyId]);
+  }, [companyId, profile?.companyId]);
 
   const onLogo = async (file: File | undefined) => {
     if (!file) return;
-    if (!resolvedCompanyId) {
+    const companyKey = resolvedCompanyId ?? (await resolveLinkedCompanyId(companyId));
+    if (!companyKey) {
       toast.error("Company not ready yet", {
-        description: "Refresh the page or sign in again, then upload your logo.",
+        description: "Run the latest SQL migrations, then refresh or sign in again.",
       });
       return;
     }
+    setLinkedCompanyId(companyKey);
 
-    // Instant preview while upload runs
     const preview = URL.createObjectURL(file);
     localLogoRef.current = preview;
     setLogoUrl(preview);
     setUploading(true);
 
     try {
-      const result = await uploadCompanyLogo(resolvedCompanyId, file);
+      const result = await uploadCompanyLogo(companyKey, file);
       if ("error" in result) {
         URL.revokeObjectURL(preview);
         localLogoRef.current = null;
@@ -136,10 +163,12 @@ function BrandOnboardingPage() {
   };
 
   const onSave = async () => {
-    if (!resolvedCompanyId) {
-      toast.error("Company not ready yet — sign in again");
+    const companyKey = resolvedCompanyId ?? (await resolveLinkedCompanyId(companyId));
+    if (!companyKey) {
+      toast.error("Company not ready yet — sign in again after applying SQL migration 25");
       return;
     }
+    setLinkedCompanyId(companyKey);
     if (!name.trim()) {
       toast.error("Company name is required");
       return;
@@ -151,7 +180,7 @@ function BrandOnboardingPage() {
 
     setSaving(true);
     const result = await updateCompanyBrand({
-      companyId: resolvedCompanyId,
+      companyId: companyKey,
       name: name.trim(),
       tagline: tagline.trim(),
       primaryColor: primary,
@@ -168,7 +197,7 @@ function BrandOnboardingPage() {
     }
 
     updateTenant({
-      id: resolvedCompanyId,
+      id: companyKey,
       name: name.trim(),
       tagline: tagline.trim(),
       primaryColor: primary,
@@ -184,6 +213,7 @@ function BrandOnboardingPage() {
         .slice(0, 2)
         .toUpperCase(),
     });
+    await refreshProfileAfterAuth().catch(() => undefined);
     await refreshTenant();
     setDone(true);
     toast.success("Brand saved — share your portal link or QR");
@@ -200,14 +230,22 @@ function BrandOnboardingPage() {
   return (
     <div className="mx-auto max-w-2xl space-y-8 py-4">
       <div>
-        <p className="text-xs font-semibold uppercase tracking-wider text-primary">First-time setup</p>
-        <h1 className="mt-2 font-display text-3xl font-bold tracking-tight">Create your company brand</h1>
+        <p className="text-xs font-semibold uppercase tracking-wider text-primary">
+          {done ? "Your brand" : "First-time setup"}
+        </p>
+        <h1 className="mt-2 font-display text-3xl font-bold tracking-tight">
+          {done ? "Your company brand" : "Create your company brand"}
+        </h1>
         <p className="mt-2 text-muted-foreground">
-          Customers only see your name, logo and colours. After this you can share your portal link or QR code.
+          {done
+            ? "Your branding is saved. Share the portal link or QR so customers can start using it."
+            : "Customers only see your name, logo and colours. After this you can share your portal link or QR code."}
         </p>
         {!resolvedCompanyId ? (
           <p className="mt-3 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-100">
-            Your company workspace is still linking. Refresh this page or sign out and sign in again.
+            Your company workspace is still linking. Apply migration{" "}
+            <code className="rounded bg-black/10 px-1">20260312000025_repair_company_link.sql</code> in Supabase,
+            then refresh or sign out and sign in again.
           </p>
         ) : null}
       </div>
@@ -227,7 +265,6 @@ function BrandOnboardingPage() {
                 alt="Company logo"
                 className="h-full w-full object-cover"
                 onError={() => {
-                  // Remote URL blocked — keep placeholder rather than broken icon
                   if (localLogoRef.current === logoUrl) return;
                   setLogoUrl(null);
                 }}
@@ -275,7 +312,7 @@ function BrandOnboardingPage() {
               value={tagline}
               onChange={(e) => setTagline(e.target.value)}
               className="h-11 rounded-xl"
-              placeholder="Fast. Reliable. Everywhere."
+              placeholder="Short line customers see on your portal"
             />
           </div>
           <div className="space-y-1.5">
@@ -292,26 +329,40 @@ function BrandOnboardingPage() {
           </div>
           <div className="space-y-1.5">
             <Label>Support email</Label>
-            <Input value={email} onChange={(e) => setEmail(e.target.value)} className="h-11 rounded-xl" placeholder="hello@yourcompany.zm" />
+            <Input
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="h-11 rounded-xl"
+              placeholder="hello@yourcompany.zm"
+            />
           </div>
         </div>
 
-        <Button className="h-12 w-full rounded-xl" disabled={saving || !resolvedCompanyId} onClick={() => void onSave()}>
-          {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-          Save brand &amp; continue
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            className="h-12 flex-1 rounded-xl text-base"
+            disabled={saving || !resolvedCompanyId}
+            onClick={() => void onSave()}
+          >
+            {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            {done ? "Save brand changes" : "Save brand & continue"}
+          </Button>
+          {done ? (
+            <Button type="button" variant="outline" className="h-12 rounded-xl" onClick={() => void navigate({ to: "/app" })}>
+              Go to dashboard
+            </Button>
+          ) : null}
+        </div>
       </div>
 
-      {done ? (
-        <div className="rounded-2xl border border-border bg-card p-6 shadow-card">
-          <div className="mb-4 flex items-center gap-2 font-semibold">
-            <Share2 className="h-4 w-4 text-primary" />
-            Share {name} with customers
+      {done || logoUrl ? (
+        <div className="rounded-2xl border border-border bg-card p-6 shadow-card space-y-4">
+          <div className="flex items-center gap-2">
+            <Share2 className="h-5 w-5 text-primary" />
+            <h2 className="text-lg font-semibold">Share {name || "your company"} with customers</h2>
           </div>
           <SharePortalPanel />
-          <Button className="mt-6 h-12 w-full rounded-xl" onClick={() => void navigate({ to: "/app" })}>
-            Open workspace
-          </Button>
         </div>
       ) : null}
     </div>
