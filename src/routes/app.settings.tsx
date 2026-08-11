@@ -54,9 +54,9 @@ function BrandingEditor() {
             className="grid h-24 w-24 place-items-center overflow-hidden rounded-2xl border border-dashed border-border bg-muted/40"
           >
             {logoUrl ? (
-              <img src={logoUrl} alt="" className="h-full w-full object-cover" />
+              <img src={logoUrl} alt="Company logo" className="h-full w-full object-cover" />
             ) : (
-              <span className="text-xs text-muted-foreground">Logo</span>
+              <ImagePlus className="h-8 w-8 text-muted-foreground" />
             )}
           </button>
           <Button
@@ -65,24 +65,30 @@ function BrandingEditor() {
             className="mt-3 rounded-full"
             onClick={() => fileRef.current?.click()}
           >
-            Upload logo
+            {logoUrl ? "Change logo" : "Upload logo"}
           </Button>
           <input
             ref={fileRef}
             type="file"
-            accept="image/*"
+            accept="image/png,image/jpeg,image/webp,image/svg+xml"
             className="hidden"
             onChange={async (e) => {
               const file = e.target.files?.[0];
               if (!file) return;
+              const preview = URL.createObjectURL(file);
+              setLogoUrl(preview);
               const result = await uploadCompanyLogo(companyKey, file);
               if ("error" in result) {
+                URL.revokeObjectURL(preview);
+                setLogoUrl(tenant.logoUrl);
                 toast.error(result.error);
                 return;
               }
+              URL.revokeObjectURL(preview);
               setLogoUrl(result.url);
               updateTenant({ logoUrl: result.url });
               toast.success("Logo uploaded");
+              e.target.value = "";
             }}
           />
         </div>

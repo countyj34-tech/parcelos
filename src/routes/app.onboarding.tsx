@@ -36,7 +36,9 @@ function BrandOnboardingPage() {
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
   const [done, setDone] = useState(false);
+  const localLogoRef = useRef<string | null>(null);
 
   const resolvedCompanyId = isCompanyUuid(companyId)
     ? companyId
@@ -71,22 +73,24 @@ function BrandOnboardingPage() {
           setAccent(mapped.accentColor);
           setPhone(mapped.supportPhone);
           setEmail(mapped.supportEmail);
-          setLogoUrl(mapped.logoUrl);
-          setDone(Boolean(mapped.logoUrl));
+          // Don't wipe a logo the user just uploaded if the effect re-runs
+          if (!localLogoRef.current) {
+            setLogoUrl(mapped.logoUrl);
+            setDone(Boolean(mapped.logoUrl));
+          }
           setLoading(false);
           return;
         }
       }
 
       if (!cancelled) {
-        // Real company only — avoid demo Swift Logistics defaults for new signups
         setName(company && company !== "Swift Logistics" ? company : "");
         setTagline("");
         setPrimary("#0F766E");
         setAccent("#F59E0B");
         setPhone("");
         setEmail("");
-        setLogoUrl(null);
+        if (!localLogoRef.current) setLogoUrl(null);
         setLoading(false);
       }
     })();
@@ -104,14 +108,31 @@ function BrandOnboardingPage() {
       });
       return;
     }
-    const result = await uploadCompanyLogo(resolvedCompanyId, file);
-    if ("error" in result) {
-      toast.error(result.error);
-      return;
+
+    // Instant preview while upload runs
+    const preview = URL.createObjectURL(file);
+    localLogoRef.current = preview;
+    setLogoUrl(preview);
+    setUploading(true);
+
+    try {
+      const result = await uploadCompanyLogo(resolvedCompanyId, file);
+      if ("error" in result) {
+        URL.revokeObjectURL(preview);
+        localLogoRef.current = null;
+        setLogoUrl(null);
+        toast.error(result.error);
+        return;
+      }
+      URL.revokeObjectURL(preview);
+      localLogoRef.current = result.url;
+      setLogoUrl(result.url);
+      updateTenant({ logoUrl: result.url });
+      toast.success("Logo uploaded");
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
     }
-    setLogoUrl(result.url);
-    updateTenant({ logoUrl: result.url });
-    toast.success("Logo uploaded");
   };
 
   const onSave = async () => {
@@ -198,8 +219,19 @@ function BrandOnboardingPage() {
             onClick={() => fileRef.current?.click()}
             className="grid h-24 w-24 place-items-center overflow-hidden rounded-2xl border border-dashed border-border bg-muted/40"
           >
-            {logoUrl ? (
-              <img src={logoUrl} alt="" className="h-full w-full object-cover" />
+            {uploading ? (
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            ) : logoUrl ? (
+              <img
+                src={logoUrl}
+                alt="Company logo"
+                className="h-full w-full object-cover"
+                onError={() => {
+                  // Remote URL blocked — keep placeholder rather than broken icon
+                  if (localLogoRef.current === logoUrl) return;
+                  setLogoUrl(null);
+                }}
+              />
             ) : (
               <ImagePlus className="h-8 w-8 text-muted-foreground" />
             )}
@@ -212,10 +244,10 @@ function BrandOnboardingPage() {
               variant="outline"
               size="sm"
               className="mt-2 rounded-xl"
-              disabled={!resolvedCompanyId}
+              disabled={!resolvedCompanyId || uploading}
               onClick={() => fileRef.current?.click()}
             >
-              Upload logo
+              {uploading ? "Uploading…" : logoUrl ? "Change logo" : "Upload logo"}
             </Button>
             <input
               ref={fileRef}

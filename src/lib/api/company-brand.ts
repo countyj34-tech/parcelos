@@ -105,6 +105,32 @@ async function uploadLogoViaEdge(file: File): Promise<{ url: string } | { error:
   return { url: json.url };
 }
 
+/** Save logo URL on the company row immediately after upload. */
+export async function persistCompanyLogoUrl(logoUrl: string): Promise<{ ok: boolean; error?: string }> {
+  if (!isSupabaseConfigured()) return { ok: true };
+  const supabase = getSupabase();
+  if (!supabase) return { ok: false, error: "Supabase not available" };
+
+  const { error } = await supabase.rpc("set_my_company_logo", {
+    p_logo_url: logoUrl,
+  });
+  if (error) {
+    // Fallback if migration 23 not applied yet
+    if (/function .*set_my_company_logo/i.test(error.message) || error.code === "PGRST202") {
+      const companyId = await resolveUploadCompanyId();
+      if (!companyId) return { ok: false, error: error.message };
+      const { error: upErr } = await supabase
+        .from("companies")
+        .update({ logo_url: logoUrl })
+        .eq("id", companyId);
+      if (upErr) return { ok: false, error: upErr.message };
+      return { ok: true };
+    }
+    return { ok: false, error: error.message };
+  }
+  return { ok: true };
+}
+
 /** Upload logo — tries direct storage, then secure edge upload if RLS blocks. */
 export async function uploadCompanyLogo(
   companyId: string,
@@ -134,23 +160,35 @@ export async function uploadCompanyLogo(
     contentType: file.type || "image/png",
   });
 
+  let publicUrl: string | null = null;
+
   if (!upErr) {
     const { data } = supabase.storage.from("company-logos").getPublicUrl(path);
-    return { url: data.publicUrl };
-  }
-
-  // Storage RLS still blocking — use service-role edge function
-  if (/row-level security|rls|policy/i.test(upErr.message)) {
+    publicUrl = data.publicUrl;
+  } else if (/row-level security|rls|policy/i.test(upErr.message)) {
     const viaEdge = await uploadLogoViaEdge(file);
-    if ("url" in viaEdge) return viaEdge;
-    return {
-      error:
-        viaEdge.error ||
-        "Logo upload blocked. Run 20260312000022_fix_logo_storage_rls.sql in Supabase SQL Editor (and deploy upload-company-logo).",
-    };
+    if ("error" in viaEdge) {
+      return {
+        error:
+          viaEdge.error ||
+          "Logo upload blocked. Run 20260312000022_fix_logo_storage_rls.sql in Supabase SQL Editor.",
+      };
+    }
+    publicUrl = viaEdge.url;
+  } else {
+    return { error: upErr.message || "Upload failed" };
   }
 
-  return { error: upErr.message || "Upload failed" };
+  if (!publicUrl) return { error: "Upload failed" };
+
+  // Keep preview after refresh — write logo_url now (don't wait for Save brand)
+  const saved = await persistCompanyLogoUrl(publicUrl);
+  if (!saved.ok) {
+    // File is in storage; still return URL so UI can show it
+    console.warn("[persistCompanyLogoUrl]", saved.error);
+  }
+
+  return { url: publicUrl };
 }
 
 function fileToDataUrl(file: File): Promise<string> {
