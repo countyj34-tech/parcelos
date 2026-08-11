@@ -288,6 +288,41 @@ export async function createGuestParcel(input: CreateGuestParcelInput): Promise<
   const supabase = getSupabase();
   if (!supabase) return null;
 
+  const { data, error } = await supabase.rpc("register_guest_parcel", {
+    p_company_id: input.companyId,
+    p_sender_name: input.senderName,
+    p_sender_phone: input.senderPhone,
+    p_receiver_name: input.receiverName,
+    p_receiver_phone: input.receiverPhone,
+    p_origin_branch_id: input.originBranchId,
+    p_destination_branch_id: input.destinationBranchId,
+    p_sender_email: input.senderEmail || null,
+    p_description: input.description || null,
+    p_instructions: input.instructions || null,
+    p_declared_value_cents: input.declaredValueCents ?? 0,
+    p_category_id: input.categoryId ?? null,
+    p_weight_kg: input.weightKg ?? null,
+    p_currency_code: input.currencyCode ?? "ZMW",
+  });
+
+  if (error) {
+    console.warn("[createGuestParcel]", error.message);
+    // Fallback for DBs that have not applied migration 21 yet
+    return createGuestParcelLegacy(input);
+  }
+
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row?.id || !row?.tracking_number) return null;
+  return { id: row.id as string, trackingNumber: row.tracking_number as string };
+}
+
+async function createGuestParcelLegacy(input: CreateGuestParcelInput): Promise<{
+  trackingNumber: string;
+  id: string;
+} | null> {
+  const supabase = getSupabase();
+  if (!supabase) return null;
+
   const suffix = Math.floor(100000 + Math.random() * 900000);
   const trackingNumber = `POS-${suffix}-ZM`;
 
@@ -318,11 +353,10 @@ export async function createGuestParcel(input: CreateGuestParcelInput): Promise<
     .single();
 
   if (error || !data) {
-    console.warn("[createGuestParcel]", error?.message);
+    console.warn("[createGuestParcelLegacy]", error?.message);
     return null;
   }
 
-  // Keep customers directory live for multi-company scale
   const phone = input.senderPhone.trim();
   if (phone) {
     const { data: existing } = await supabase
