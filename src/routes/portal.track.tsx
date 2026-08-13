@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   ArrowLeft,
@@ -22,30 +22,23 @@ import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/portal/track")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    q: typeof search.q === "string" ? search.q : undefined,
+  }),
   head: () => ({
     meta: [{ title: "Track parcel" }],
   }),
   component: PortalTrack,
 });
 
-const DEMO_TIMELINE = [
-  { label: "Waiting for Drop-off", icon: Clock, time: "11 Mar 2026 · 18:42", detail: "Reference created online." },
-  { label: "Received", icon: PackageCheck, time: "12 Mar 2026 · 08:14", detail: "Verified at Lusaka — Cairo Road." },
-  { label: "Dispatched", icon: Warehouse, time: "12 Mar 2026 · 13:30", detail: "Loaded onto run LSK-RUN-041." },
-  { label: "In Transit", icon: Truck, time: "12 Mar 2026 · 15:05", detail: "En route to Ndola — Broadway." },
-  { label: "Arrived", icon: MapPin, time: "Expected · 19:40", detail: "Ndola — Broadway branch." },
-  { label: "Ready for Collection", icon: PackageSearch, time: "Pending", detail: "Receiver will be notified." },
-  { label: "Collected", icon: Handshake, time: "Pending", detail: "ID required at counter." },
-];
-
-const FLOW = [
-  "waiting_for_dropoff",
-  "received",
-  "dispatched",
-  "in_transit",
-  "at_destination_branch",
-  "ready_for_collection",
-  "collected",
+const FLOW_STEPS = [
+  { code: "waiting_for_dropoff", label: "Waiting for Drop-off", icon: Clock, detail: "Reference created — bring the parcel to the branch." },
+  { code: "received", label: "Received", icon: PackageCheck, detail: "Verified and weighed at origin branch." },
+  { code: "dispatched", label: "Dispatched", icon: Warehouse, detail: "Loaded for the outbound run." },
+  { code: "in_transit", label: "In Transit", icon: Truck, detail: "En route to destination branch." },
+  { code: "at_destination_branch", label: "Arrived", icon: MapPin, detail: "At destination branch." },
+  { code: "ready_for_collection", label: "Ready for Collection", icon: PackageSearch, detail: "Receiver can collect with ID." },
+  { code: "collected", label: "Collected", icon: Handshake, detail: "Handed over to the receiver." },
 ] as const;
 
 function statusIndex(status: string): number {
@@ -53,12 +46,13 @@ function statusIndex(status: string): number {
   if (normalized === "reception_verification" || normalized === "awaiting_payment" || normalized === "label_printed") {
     return 1;
   }
-  const idx = FLOW.indexOf(normalized as (typeof FLOW)[number]);
+  const idx = FLOW_STEPS.findIndex((s) => s.code === normalized);
   return idx >= 0 ? idx : 0;
 }
 
 function PortalTrack() {
-  const [query, setQuery] = useState("");
+  const { q: initialQ } = Route.useSearch();
+  const [query, setQuery] = useState(initialQ ?? "");
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
   const [result, setResult] = useState<{
@@ -73,7 +67,7 @@ function PortalTrack() {
   } | null>(null);
 
   const timeline = useMemo(() => {
-    if (!result?.live) return DEMO_TIMELINE;
+    if (!result) return [];
     if (result.events.length) {
       return result.events.map((ev) => ({
         label: ev.title || formatParcelStatus(ev.status),
@@ -83,8 +77,9 @@ function PortalTrack() {
       }));
     }
     const idx = statusIndex(result.status);
-    return DEMO_TIMELINE.map((step, i) => ({
-      ...step,
+    return FLOW_STEPS.map((step, i) => ({
+      label: step.label,
+      icon: step.icon,
       time: i < idx ? "Done" : i === idx ? formatUpdated(result.updatedAt) : "Pending",
       detail:
         i === idx
@@ -95,16 +90,15 @@ function PortalTrack() {
     }));
   }, [result]);
 
-  const currentIndex = result?.live
+  const currentIndex = result
     ? result.events.length
       ? Math.max(result.events.length - 1, 0)
       : statusIndex(result.status)
-    : 3;
+    : 0;
   const uiStatus = result ? formatParcelStatus(result.status) : "In Transit";
 
-  const onTrack = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const tracking = query.trim();
+  const runTrack = async (trackingRaw: string) => {
+    const tracking = trackingRaw.trim();
     if (!tracking) {
       toast.error("Enter a tracking number");
       return;
@@ -113,40 +107,45 @@ function PortalTrack() {
     setLoading(true);
     setSearched(true);
 
-    if (isSupabaseConfigured()) {
-      const row = await trackParcelPublic(tracking);
-      if (row) {
-        const events = await fetchParcelTrackingEvents(row.tracking_number);
-        setResult({
-          tracking: row.tracking_number,
-          status: row.status,
-          origin: row.origin_branch ?? "—",
-          destination: row.destination_branch ?? "—",
-          company: row.company_name,
-          updatedAt: row.updated_at,
-          live: true,
-          events: events as Array<{ title: string; description: string | null; occurred_at: string; status: string }>,
-        });
-        setLoading(false);
-        return;
-      }
+    if (!isSupabaseConfigured()) {
       setResult(null);
-      toast.message("No parcel found", { description: "Check the reference and try again." });
+      toast.error("Tracking is unavailable", { description: "Connect the app to Supabase for live tracking." });
       setLoading(false);
       return;
     }
 
-    setResult({
-      tracking: tracking.toUpperCase(),
-      status: "in_transit",
-      origin: "Cairo Road",
-      destination: "Ndola",
-      company: "Demo",
-      updatedAt: new Date().toISOString(),
-      live: false,
-      events: [],
-    });
+    const row = await trackParcelPublic(tracking);
+    if (row) {
+      const events = await fetchParcelTrackingEvents(row.tracking_number);
+      setResult({
+        tracking: row.tracking_number,
+        status: row.status,
+        origin: row.origin_branch ?? "—",
+        destination: row.destination_branch ?? "—",
+        company: row.company_name,
+        updatedAt: row.updated_at,
+        live: true,
+        events: events as Array<{ title: string; description: string | null; occurred_at: string; status: string }>,
+      });
+      setLoading(false);
+      return;
+    }
+
+    setResult(null);
+    toast.message("No parcel found", { description: "Check the reference and try again." });
     setLoading(false);
+  };
+
+  useEffect(() => {
+    if (initialQ?.trim()) {
+      void runTrack(initialQ);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only auto-run when URL q is present on mount
+  }, [initialQ]);
+
+  const onTrack = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await runTrack(query);
   };
 
   return (
@@ -185,7 +184,7 @@ function PortalTrack() {
             <p className="mt-1 font-display text-xl font-bold">{result.tracking}</p>
             <p className="mt-1 text-sm text-muted-foreground">
               {result.origin} → {result.destination}
-              {result.live ? ` · ${result.company}` : " · 3.2 kg"}
+              {result.company ? ` · ${result.company}` : ""}
             </p>
             <StatusPill status={uiStatus} className="mt-3" />
           </div>

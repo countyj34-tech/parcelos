@@ -11,7 +11,7 @@ export const DB_ROLE_TO_UI: Record<string, UserRole> = {
   customer_support: "Customer Support",
   driver: "Driver",
   customer: "Customer",
-  guest: "Guest",
+  guest: "Customer",
   auditor: "Auditor",
 };
 

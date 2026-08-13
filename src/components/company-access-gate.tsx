@@ -12,6 +12,7 @@ import {
   subscribeCompanyLifecycle,
 } from "@/lib/company-lifecycle";
 import { getCompanyBySlug } from "@/lib/platform-data";
+import { isCustomerPortalMode } from "@/lib/portal-mode";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 
 const BILLING_ESCAPE = ["/app/subscription", "/app/support", "/login", "/signup"];
@@ -50,7 +51,18 @@ export function CompanyAccessGate({ children }: { children: React.ReactNode }) {
 
     const checkRemote = async () => {
       const looksLikeUuid = /^[0-9a-f-]{36}$/i.test(tenant.id);
+      // Customer share-link portal: only lock when the remote lock check says so
+      const customerPortal = isCustomerPortalMode();
       if (looksLikeUuid) {
+        if (customerPortal) {
+          const locked = await isCompanyLockedRemote(tenant.id);
+          if (!cancelled) {
+            setBlocked(Boolean(locked));
+            setStatusLabel(locked ? "Suspended" : "Active");
+            setReady(true);
+            return;
+          }
+        }
         const [locked, billing] = await Promise.all([
           isCompanyLockedRemote(tenant.id),
           fetchCompanyBilling(),
@@ -76,6 +88,15 @@ export function CompanyAccessGate({ children }: { children: React.ReactNode }) {
             return;
           }
         }
+      }
+      // Fail closed for unknown live companies — do not open access when status is unknown
+      if (looksLikeUuid) {
+        if (!cancelled) {
+          setBlocked(true);
+          setStatusLabel("Unavailable");
+          setReady(true);
+        }
+        return;
       }
       checkLocal();
     };

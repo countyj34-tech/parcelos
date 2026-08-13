@@ -8,12 +8,18 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/use-auth";
 import { useTenant } from "@/hooks/use-tenant";
+import { markCustomerPortalMode } from "@/lib/portal-mode";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/portal/sign-in")({
   head: () => ({ meta: [{ title: "Sign in" }] }),
   component: PortalSignIn,
 });
+
+function phoneToEmail(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  return `c${digits}@customers.parcelos.app`;
+}
 
 function PortalSignIn() {
   const navigate = useNavigate();
@@ -27,13 +33,15 @@ function PortalSignIn() {
     e.preventDefault();
     setLoading(true);
 
+    markCustomerPortalMode(tenant.slug);
+
     if (isDemoMode) {
       void navigate({ to: "/portal/history" });
       setLoading(false);
       return;
     }
 
-    const email = identifier.includes("@") ? identifier : `${identifier}@customer.local`;
+    const email = identifier.includes("@") ? identifier.trim().toLowerCase() : phoneToEmail(identifier);
     const result = await signIn(email, password);
     if (result.error) {
       toast.error(result.error);
@@ -41,7 +49,7 @@ function PortalSignIn() {
       return;
     }
 
-    void navigate({ to: result.redirect.includes("portal") ? "/portal/history" : result.redirect });
+    void navigate({ to: "/portal/history" });
     setLoading(false);
   };
 
@@ -89,10 +97,10 @@ function PortalSignIn() {
               Sign in
             </h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Access your {tenant.name} account
+              Your {tenant.name} customer account — history stays on this device when signed in.
             </p>
 
-            <form className="mt-5 space-y-4 sm:mt-6 sm:space-y-5" onSubmit={handleSubmit}>
+            <form className="mt-5 space-y-4 sm:mt-6 sm:space-y-5" onSubmit={(e) => void handleSubmit(e)}>
               <div className="space-y-1.5">
                 <Label htmlFor="identifier">Phone or email</Label>
                 <div className="relative">
@@ -111,13 +119,6 @@ function PortalSignIn() {
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between gap-2">
                   <Label htmlFor="password">Password</Label>
-                  <button
-                    type="button"
-                    className="text-xs font-medium hover:underline"
-                    style={{ color: "var(--tenant-primary)" }}
-                  >
-                    Forgot password?
-                  </button>
                 </div>
                 <div className="relative">
                   <Lock className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -127,7 +128,6 @@ function PortalSignIn() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required={!isDemoMode}
-                    placeholder="Your password"
                     className="h-11 rounded-xl bg-background pl-10 text-base sm:h-12 sm:pl-11"
                   />
                 </div>
@@ -136,21 +136,18 @@ function PortalSignIn() {
               <Button
                 type="submit"
                 disabled={loading}
-                className="h-11 w-full rounded-xl text-base sm:h-12"
+                className="h-12 w-full rounded-xl text-base font-semibold"
                 style={{ background: "var(--tenant-primary)", color: "var(--tenant-primary-fg)" }}
               >
-                {loading ? "Signing in…" : "Sign in"} <ArrowRight className="ml-1.5 h-4 w-4" />
+                {loading ? "Signing in…" : "Sign in"}
+                <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
             </form>
 
-            <p className="mt-5 text-center text-sm text-muted-foreground">
-              No account?{" "}
-              <Link
-                to="/portal/register"
-                className="font-semibold hover:underline"
-                style={{ color: "var(--tenant-primary)" }}
-              >
-                Send a parcel as guest
+            <p className="mt-4 text-center text-sm text-muted-foreground">
+              New here?{" "}
+              <Link to="/portal/register" className="font-semibold" style={{ color: "var(--tenant-primary)" }}>
+                Create account
               </Link>
             </p>
           </div>

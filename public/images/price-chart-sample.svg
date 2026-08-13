@@ -2,13 +2,13 @@
   <rect width="800" height="1000" fill="#F8FAFC"/>
   <rect x="40" y="40" width="720" height="920" rx="16" fill="#FFFFFF" stroke="#E2E8F0"/>
   <text x="400" y="110" text-anchor="middle" font-family="system-ui,sans-serif" font-size="32" font-weight="700" fill="#0F766E">Swift Logistics</text>
-  <text x="400" y="148" text-anchor="middle" font-family="system-ui,sans-serif" font-size="18" fill="#64748B">Counter price chart — ZMW</text>
+  <text x="400" y="148" text-anchor="middle" font-family="system-ui,sans-serif" font-size="18" fill="#64748B">Counter price chart ï¿½ ZMW</text>
   <text x="400" y="178" text-anchor="middle" font-family="system-ui,sans-serif" font-size="14" fill="#94A3B8">Final fee confirmed at drop-off after weighing</text>
 
   <rect x="80" y="220" width="640" height="48" rx="8" fill="#0F766E"/>
   <text x="120" y="250" font-family="system-ui,sans-serif" font-size="15" font-weight="600" fill="#FFFFFF">Route / zone</text>
   <text x="420" y="250" font-family="system-ui,sans-serif" font-size="15" font-weight="600" fill="#FFFFFF">Up to 5kg</text>
-  <text x="580" y="250" font-family="system-ui,sans-serif" font-size="15" font-weight="600" fill="#FFFFFF">5–15kg</text>
+  <text x="580" y="250" font-family="system-ui,sans-serif" font-size="15" font-weight="600" fill="#FFFFFF">5ï¿½15kg</text>
 
   <g font-family="system-ui,sans-serif" font-size="15" fill="#0F172A">
     <rect x="80" y="280" width="640" height="52" fill="#F1F5F9"/>
@@ -44,5 +44,5 @@
   <text x="620" y="740" text-anchor="end" font-family="system-ui,sans-serif" font-size="14" fill="#334155">+80</text>
 
   <text x="400" y="840" text-anchor="middle" font-family="system-ui,sans-serif" font-size="13" fill="#94A3B8">Ask staff to confirm weight and zone at the counter</text>
-  <text x="400" y="880" text-anchor="middle" font-family="system-ui,sans-serif" font-size="12" fill="#CBD5E1">Prices subject to change · Displayed for customer reference</text>
+  <text x="400" y="880" text-anchor="middle" font-family="system-ui,sans-serif" font-size="12" fill="#CBD5E1">Prices subject to change ï¿½ Displayed for customer reference</text>
 </svg>

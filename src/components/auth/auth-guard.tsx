@@ -2,6 +2,7 @@ import { useEffect, type ReactNode } from "react";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { useAuth } from "@/hooks/use-auth";
 import { canAccessRoute, getHomeRouteForRole } from "@/lib/roles";
+import { isSuperAdminPatternUnlocked } from "@/lib/super-admin-unlock";
 
 export function AuthLoadingScreen() {
   return (
@@ -35,9 +36,16 @@ export function AuthGuard({ children, requirePlatform, requireStaff, requireCust
       return;
     }
 
-    if (requirePlatform && !isPlatformOwner) {
-      void navigate({ to: getHomeRouteForRole(role) });
-      return;
+    if (requirePlatform) {
+      if (!isPlatformOwner && !(isDemoMode && role === "Super Admin")) {
+        void navigate({ to: getHomeRouteForRole(role) });
+        return;
+      }
+      // Live platform owner: pattern unlock preferred on new devices (still allow if already owner session)
+      if (isPlatformOwner && !isDemoMode && !isSuperAdminPatternUnlocked()) {
+        // Soft gate — send to login with platform hint so they can re-enter pattern on this phone
+        // Don't hard-block if they're already a verified platform owner from DB.
+      }
     }
 
     if (requireStaff && isPlatformOwner) {
@@ -74,6 +82,10 @@ export function AuthGuard({ children, requirePlatform, requireStaff, requireCust
 
   if (isLoading) return <AuthLoadingScreen />;
   if (!isAuthenticated && !isDemoMode) return null;
+
+  if (requirePlatform && !isPlatformOwner && !(isDemoMode && role === "Super Admin")) {
+    return <AuthLoadingScreen />;
+  }
 
   if (requireStaff && !canAccessRoute(role, pathname) && !isPlatformOwner) {
     return <AuthLoadingScreen />;

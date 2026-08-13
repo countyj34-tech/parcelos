@@ -7,7 +7,8 @@ export type UserRole =
   | "Finance"
   | "Customer Support"
   | "Driver"
-  | "Auditor";
+  | "Auditor"
+  | "Customer";
 
 export type NavItem = {
   label: string;
@@ -41,12 +42,13 @@ const ROLE_PATHS: Record<UserRole, readonly string[]> = {
   "Super Admin": ALL_WORKSPACE,
   "Company Admin": [...ALL_WORKSPACE, "/app/subscription", "/app/onboarding"],
   "Branch Manager": [...ALL_WORKSPACE, "/app/onboarding"],
-  Receptionist: ["/app/reception", "/app/parcels", "/app/customers"],
+  Receptionist: ["/app/reception"],
   Dispatcher: ["/app/dispatch", "/app/tracking", "/app/parcels", "/app/reception"],
   Finance: ["/app/reports", "/app/payments"],
   "Customer Support": ["/app/customers", "/app/parcels", "/app/support"],
   Driver: ["/app/dispatch", "/app/tracking"],
   Auditor: ["/app/reports", "/app/parcels"],
+  Customer: [],
 };
 
 /** Where each role lands after sign-in. */
@@ -60,6 +62,7 @@ const ROLE_HOME: Record<UserRole, string> = {
   "Customer Support": "/app/customers",
   Driver: "/app/dispatch",
   Auditor: "/app/reports",
+  Customer: "/portal/history",
 };
 
 export function getHomeRouteForRole(role: UserRole): string {
@@ -85,6 +88,10 @@ export function canAccessRoute(role: UserRole, path: string): boolean {
 
   if (pathname.startsWith("/admin")) {
     return false;
+  }
+
+  if (role === "Customer") {
+    return pathname.startsWith("/portal") || pathname.startsWith("/c/");
   }
 
   if (!pathname.startsWith("/app")) {
@@ -115,6 +122,7 @@ export const ROLE_USERS: Record<
   "Customer Support": { name: "Mercy Lungu", email: "support@swiftlogistics.zm", initials: "ML", branch: "Head Office" },
   Driver: { name: "Joseph Kunda", email: "joseph@swiftlogistics.zm", initials: "JK", branch: "Ndola — Broadway" },
   Auditor: { name: "David Phiri", email: "audit@swiftlogistics.zm", initials: "DP", branch: "Head Office" },
+  Customer: { name: "Guest Customer", email: "customer@example.com", initials: "GC", branch: "Customer" },
 };
 
 export const DEMO_ROLES: UserRole[] = [

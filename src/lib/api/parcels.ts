@@ -278,15 +278,29 @@ export type CreateGuestParcelInput = {
   categoryId?: string | null;
   weightKg?: number | null;
   instructions?: string | null;
+  /** Customer-facing destination (province / area) — stored in parcel metadata instructions. */
+  destinationProvince?: string | null;
 };
 
 export async function createGuestParcel(input: CreateGuestParcelInput): Promise<{
   trackingNumber: string;
   id: string;
-} | null> {
-  if (!isSupabaseConfigured()) return null;
+} | { error: string }> {
+  if (!isSupabaseConfigured()) return { error: "App is not connected to the database" };
   const supabase = getSupabase();
-  if (!supabase) return null;
+  if (!supabase) return { error: "App is not connected to the database" };
+
+  if (!/^[0-9a-f-]{36}$/i.test(input.companyId)) {
+    return { error: "Open the company share link again (/c/your-company) before sending." };
+  }
+  if (!/^[0-9a-f-]{36}$/i.test(input.originBranchId) || !/^[0-9a-f-]{36}$/i.test(input.destinationBranchId)) {
+    return { error: "Choose a destination province so we can route this parcel." };
+  }
+
+  const province = input.destinationProvince?.trim();
+  const instructions = [input.instructions?.trim(), province ? `Destination province: ${province}` : ""]
+    .filter(Boolean)
+    .join("\n");
 
   const { data, error } = await supabase.rpc("register_guest_parcel", {
     p_company_id: input.companyId,
@@ -298,7 +312,7 @@ export async function createGuestParcel(input: CreateGuestParcelInput): Promise<
     p_destination_branch_id: input.destinationBranchId,
     p_sender_email: input.senderEmail || null,
     p_description: input.description || null,
-    p_instructions: input.instructions || null,
+    p_instructions: instructions || null,
     p_declared_value_cents: input.declaredValueCents ?? 0,
     p_category_id: input.categoryId ?? null,
     p_weight_kg: input.weightKg ?? null,
@@ -307,24 +321,32 @@ export async function createGuestParcel(input: CreateGuestParcelInput): Promise<
 
   if (error) {
     console.warn("[createGuestParcel]", error.message);
-    // Fallback for DBs that have not applied migration 21 yet
-    return createGuestParcelLegacy(input);
+    // Fallback for DBs that have not applied guest RPC yet
+    const legacy = await createGuestParcelLegacy(input);
+    if (legacy && "id" in legacy) return legacy;
+    return { error: error.message || "Could not register parcel" };
   }
 
   const row = Array.isArray(data) ? data[0] : data;
-  if (!row?.id || !row?.tracking_number) return null;
+  if (!row?.id || !row?.tracking_number) {
+    return { error: "Registration returned no tracking number" };
+  }
   return { id: row.id as string, trackingNumber: row.tracking_number as string };
 }
 
 async function createGuestParcelLegacy(input: CreateGuestParcelInput): Promise<{
   trackingNumber: string;
   id: string;
-} | null> {
+} | { error: string } | null> {
   const supabase = getSupabase();
   if (!supabase) return null;
 
   const suffix = Math.floor(100000 + Math.random() * 900000);
   const trackingNumber = `POS-${suffix}-ZM`;
+  const province = input.destinationProvince?.trim();
+  const instructions = [input.instructions?.trim(), province ? `Destination province: ${province}` : ""]
+    .filter(Boolean)
+    .join("\n");
 
   const { data, error } = await supabase
     .from("parcels")
@@ -347,14 +369,14 @@ async function createGuestParcelLegacy(input: CreateGuestParcelInput): Promise<{
       declared_value_cents: input.declaredValueCents ?? 0,
       category_id: input.categoryId ?? null,
       weight_kg: input.weightKg ?? null,
-      metadata: input.instructions ? { instructions: input.instructions } : {},
+      metadata: instructions ? { instructions, ...(province ? { destination_province: province } : {}) } : {},
     })
     .select("id, tracking_number")
     .single();
 
   if (error || !data) {
     console.warn("[createGuestParcelLegacy]", error?.message);
-    return null;
+    return error ? { error: error.message } : null;
   }
 
   const phone = input.senderPhone.trim();
@@ -398,6 +420,18 @@ export async function listCompanyBranches(
   const supabase = getSupabase();
   if (!supabase) return [];
 
+  // Prefer SECURITY DEFINER RPC so anonymous customers on share links can load branches
+  const { data: rpcRows, error: rpcError } = await supabase.rpc("list_company_branches_public", {
+    p_company_id: companyId,
+  });
+  if (!rpcError && Array.isArray(rpcRows) && rpcRows.length) {
+    return rpcRows.map((b) => ({
+      id: String((b as { id: string }).id),
+      name: String((b as { name: string }).name),
+      code: String((b as { code: string }).code ?? ""),
+    }));
+  }
+
   const { data, error } = await supabase
     .from("branches")
     .select("id, name, code")
@@ -409,4 +443,38 @@ export async function listCompanyBranches(
 
   if (error || !data) return [];
   return data as Array<{ id: string; name: string; code: string }>;
+}
+
+export async function listCompanyCategories(
+  companyId: string,
+): Promise<Array<{ id: string; name: string }>> {
+  if (!isSupabaseConfigured()) return [];
+  const supabase = getSupabase();
+  if (!supabase) return [];
+
+  const { data: rpcRows, error: rpcError } = await supabase.rpc("list_company_categories_public", {
+    p_company_id: companyId,
+  });
+  if (!rpcError && Array.isArray(rpcRows) && rpcRows.length) {
+    return rpcRows.map((c) => ({
+      id: String((c as { id: string }).id),
+      name: String((c as { name: string }).name),
+    }));
+  }
+
+  const { data, error } = await supabase
+    .from("parcel_categories")
+    .select("id, name")
+    .eq("company_id", companyId)
+    .eq("soft_delete", false)
+    .order("sort_order")
+    .order("name");
+
+  if (error || !data) return [];
+  return data as Array<{ id: string; name: string }>;
+}
+
+/** Customer portal history — RLS returns sender/receiver parcels for the signed-in customer. */
+export async function fetchMyPortalParcels(): Promise<Parcel[]> {
+  return fetchParcels();
 }

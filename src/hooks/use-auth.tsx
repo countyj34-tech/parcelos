@@ -5,6 +5,7 @@ import { isSupabaseConfigured, getAuthRedirectPath } from "@/lib/supabase/config
 import { demoProfile, loadAuthProfile, type AuthProfile } from "@/lib/auth/load-profile";
 import { registerCourierCompany } from "@/lib/api/signup";
 import { type UserRole, ROLE_USERS, getHomeRouteForRole } from "@/lib/roles";
+import { clearSuperAdminDevice, markSuperAdminDevice } from "@/lib/super-admin-unlock";
 
 function nameFromEmail(email: string): string {
   const local = email.split("@")[0] ?? "User";
@@ -47,7 +48,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 function readDemoRole(): UserRole {
   if (typeof window === "undefined") return "Company Admin";
   try {
-    if (localStorage.getItem(SUPER_ADMIN_DEVICE_KEY) === "1") {
+    if (localStorage.getItem(SUPER_ADMIN_DEVICE_KEY) === "1" || localStorage.getItem("parcelos-super-admin-unlocked") === "1") {
       return "Super Admin";
     }
     const stored = localStorage.getItem(DEMO_ROLE_KEY) ?? sessionStorage.getItem(DEMO_ROLE_KEY);
@@ -200,7 +201,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (data.session) {
         const loaded = await refreshProfile(data.session);
         if (!loaded) return { redirect: "/app/onboarding" };
-        if (loaded.isPlatformOwner) return { redirect: "/admin" };
+        if (loaded.isPlatformOwner) {
+          markSuperAdminDevice();
+          return { redirect: "/admin" };
+        }
         if (loaded.isCustomer) return { redirect: "/portal/history" };
         if (!loaded.companyId) return { redirect: "/app/onboarding" };
         return { redirect: getHomeRouteForRole(loaded.role) };
@@ -215,7 +219,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (isDemoMode) {
       sessionStorage.removeItem(DEMO_ROLE_KEY);
       localStorage.removeItem(DEMO_ROLE_KEY);
-      localStorage.removeItem(SUPER_ADMIN_DEVICE_KEY);
+      clearSuperAdminDevice();
       setProfile(demoProfile("Company Admin"));
       window.location.href = "/login";
       return;
@@ -226,6 +230,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSession(null);
     setUser(null);
     setProfile(null);
+    // Keep pattern unlock on this browser so owner can sign back into /admin on the same phone
     window.location.href = "/login";
   }, [isDemoMode]);
 
@@ -244,7 +249,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(DEMO_ROLE_KEY, role);
     sessionStorage.setItem(DEMO_ROLE_KEY, role);
     if (role === "Super Admin") {
-      localStorage.setItem(SUPER_ADMIN_DEVICE_KEY, "1");
+      markSuperAdminDevice();
     }
     setProfile(demoProfile(role));
   }, []);

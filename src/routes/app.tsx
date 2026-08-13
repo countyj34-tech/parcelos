@@ -6,6 +6,7 @@ import { CompanyBrandGate } from "@/components/company-brand-gate";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { useAuth } from "@/hooks/use-auth";
 import { useTenant } from "@/hooks/use-tenant";
+import { clearCustomerPortalMode } from "@/lib/portal-mode";
 
 export const Route = createFileRoute("/app")({
   component: AppLayout,
@@ -14,6 +15,11 @@ export const Route = createFileRoute("/app")({
 function AppLayout() {
   const { profile } = useAuth();
   const { activateTenant } = useTenant();
+
+  useEffect(() => {
+    // Company workspace — leave customer PWA mode so both systems can coexist on one device
+    clearCustomerPortalMode();
+  }, []);
 
   useEffect(() => {
     if (profile?.companySlug) {

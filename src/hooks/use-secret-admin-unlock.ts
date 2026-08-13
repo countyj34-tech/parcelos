@@ -3,14 +3,27 @@ import { useCallback, useRef } from "react";
 /**
  * Secret platform unlock on logo taps:
  * 2 taps → pause → 4 taps → pause → 7 taps → pause → 1 tap
+ *
+ * Timing is forgiving on phones (touch is slower / less precise than mouse).
  */
 const PATTERN = [2, 4, 7, 1] as const;
-/** Minimum idle time between groups (the "pause"). */
-const PAUSE_MS = 650;
-/** Max gap between taps inside one group. */
-const TAP_GAP_MS = 480;
-/** Reset if the user goes idle mid-sequence. */
-const IDLE_RESET_MS = 4500;
+
+function isCoarsePointer(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.matchMedia("(pointer: coarse)").matches || "ontouchstart" in window;
+}
+
+function timing() {
+  const mobile = isCoarsePointer();
+  return {
+    /** Minimum idle between groups (the pause). */
+    pauseMs: mobile ? 450 : 600,
+    /** Max gap between taps inside one group. */
+    tapGapMs: mobile ? 1100 : 700,
+    /** Reset if idle mid-sequence. */
+    idleResetMs: mobile ? 10000 : 5500,
+  };
+}
 
 export function useSecretAdminUnlock(onUnlock: () => void) {
   const groupIndex = useRef(0);
@@ -32,15 +45,17 @@ export function useSecretAdminUnlock(onUnlock: () => void) {
       e?.preventDefault?.();
       e?.stopPropagation?.();
 
+      const { pauseMs, tapGapMs, idleResetMs } = timing();
       const now = Date.now();
 
-      if (lastTapAt.current && now - lastTapAt.current > IDLE_RESET_MS) {
+      if (lastTapAt.current && now - lastTapAt.current > idleResetMs) {
         reset();
       }
 
       if (awaitingPause.current) {
-        if (now - groupCompletedAt.current < PAUSE_MS) {
-          // Tapped too soon after a group — sequence broken
+        if (now - groupCompletedAt.current < pauseMs) {
+          // Tapped too soon after a group — ignore (don't hard-reset on phones)
+          if (isCoarsePointer()) return;
           reset();
           return;
         }
@@ -48,8 +63,7 @@ export function useSecretAdminUnlock(onUnlock: () => void) {
         tapsInGroup.current = 0;
       }
 
-      if (tapsInGroup.current > 0 && now - lastTapAt.current > TAP_GAP_MS) {
-        // Gap too long inside a group
+      if (tapsInGroup.current > 0 && now - lastTapAt.current > tapGapMs) {
         reset();
       }
 

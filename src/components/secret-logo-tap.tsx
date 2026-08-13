@@ -3,26 +3,11 @@ import { useCallback } from "react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/use-auth";
 import { useSecretAdminUnlock } from "@/hooks/use-secret-admin-unlock";
+import { getSupabase } from "@/lib/supabase/client";
+import { markSuperAdminDevice } from "@/lib/super-admin-unlock";
 import { cn } from "@/lib/utils";
 
-const DEVICE_KEY = "parcelos-super-admin-device";
-
-export function markSuperAdminDevice() {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(DEVICE_KEY, "1");
-}
-
-export function isSuperAdminDevice() {
-  if (typeof window === "undefined") return false;
-  return localStorage.getItem(DEVICE_KEY) === "1";
-}
-
-export function clearSuperAdminDevice() {
-  if (typeof window === "undefined") return;
-  localStorage.removeItem(DEVICE_KEY);
-}
-
-/** Invisible tap target on brand marks — unlocks platform console. */
+/** Invisible tap target on brand marks — unlocks platform console on any device. */
 export function SecretLogoTap({
   children,
   className,
@@ -38,9 +23,7 @@ export function SecretLogoTap({
 
     if (isDemoMode) {
       setDemoRole("Super Admin");
-      toast.success("Platform console unlocked", {
-        description: "Install this app to keep Super Admin on this device.",
-      });
+      toast.success("Platform console unlocked");
       void navigate({ to: "/admin", search: { section: "overview", company: undefined } });
       return;
     }
@@ -51,10 +34,19 @@ export function SecretLogoTap({
       return;
     }
 
-    toast.message("Sign in as platform owner", {
-      description: "Use your Mthunzi-Tech-Labs account to open the console.",
-    });
-    void navigate({ to: "/login" });
+    const goPlatformLogin = async () => {
+      // Soft sign-out so a courier session on this phone doesn't block owner login
+      if (isAuthenticated) {
+        const supabase = getSupabase();
+        if (supabase) await supabase.auth.signOut();
+      }
+      toast.success("Pattern accepted", {
+        description: "Sign in with your platform owner email & password.",
+      });
+      window.location.href = "/login?platform=1";
+    };
+
+    void goPlatformLogin();
   }, [isAuthenticated, isDemoMode, isPlatformOwner, navigate, setDemoRole]);
 
   const { onLogoTap } = useSecretAdminUnlock(unlock);
@@ -63,10 +55,25 @@ export function SecretLogoTap({
     <button
       type="button"
       aria-label="Brand"
-      className={cn("appearance-none border-0 bg-transparent p-0 text-left", className)}
+      className={cn(
+        "appearance-none border-0 bg-transparent p-0 text-left",
+        "touch-manipulation select-none",
+        // Larger invisible hit area on phones
+        "min-h-11 min-w-11",
+        className,
+      )}
+      style={{ WebkitTapHighlightColor: "transparent", WebkitUserSelect: "none" }}
       onClick={onLogoTap}
     >
       {children}
     </button>
   );
 }
+
+export {
+  markSuperAdminDevice,
+  isSuperAdminDevice,
+  clearSuperAdminDevice,
+  isSuperAdminPatternUnlocked,
+  getPlatformOwnerLoginEmail,
+} from "@/lib/super-admin-unlock";

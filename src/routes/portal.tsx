@@ -23,8 +23,12 @@ function PortalLayout() {
     pathname.startsWith("/portal/register") &&
     (searchStr.includes("from=reception") || isReceptionRegisterMode());
   const staffOk = (isAuthenticated || isDemoMode) && !isPlatformOwner && !isCustomer;
-  const customerOk = isCustomerPortalMode();
-  const allowed = customerOk || staffWalkIn || (staffOk && pathname.startsWith("/portal/register"));
+  const customerOk = isCustomerPortalMode() || isCustomer;
+  // Staff can preview/install customer portal on the same device without losing company login
+  const allowed =
+    customerOk ||
+    staffWalkIn ||
+    (staffOk && pathname.startsWith("/portal/register"));
 
   useEffect(() => {
     registerServiceWorker();

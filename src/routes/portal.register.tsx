@@ -37,16 +37,26 @@ import {
 } from "@/components/ui/dialog";
 import { StatusPill } from "@/components/status-pill";
 import { useTenant } from "@/hooks/use-tenant";
-import { createGuestParcel, listCompanyBranches } from "@/lib/api/parcels";
-import { BRANCHES, CATEGORIES } from "@/lib/mock-data";
+import { createGuestParcel, listCompanyBranches, listCompanyCategories } from "@/lib/api/parcels";
+import { registerCustomerAccount } from "@/lib/api/customer-auth";
+import {
+  DESTINATION_PROVINCES,
+  OTHER_PROVINCE_VALUE,
+  matchBranchForProvince,
+} from "@/lib/provinces";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import {
   clearReceptionRegisterMode,
   isReceptionRegisterMode,
+  markCustomerPortalMode,
   markReceptionRegisterMode,
 } from "@/lib/portal-mode";
+import { isCustomerPortalMode } from "@/lib/portal-mode";
+import { resolveCompanyPublic } from "@/lib/api/tenant";
+import { isCompanyUuid } from "@/lib/api/company-brand";
+import { useAuth } from "@/hooks/use-auth";
 
 export const Route = createFileRoute("/portal/register")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -71,6 +81,9 @@ type FormState = {
   receiverName: string;
   receiverPhone: string;
   destination: string;
+  destinationOther: string;
+  password: string;
+  passwordConfirm: string;
   description: string;
   declaredValue: string;
   category: string;
@@ -87,20 +100,15 @@ const empty: FormState = {
   receiverName: "",
   receiverPhone: "",
   destination: "",
+  destinationOther: "",
+  password: "",
+  passwordConfirm: "",
   description: "",
   declaredValue: "",
   category: "",
   weight: "",
   quantity: "1",
   instructions: "",
-};
-
-const accountDefaults: FormState = {
-  ...empty,
-  senderName: "Chanda Mulenga",
-  senderPhone: "+260 977 214 880",
-  senderNrc: "224114/68/1",
-  senderEmail: "chanda.mulenga@zamtel.zm",
 };
 
 const ACCOUNT_BENEFITS = [
@@ -207,7 +215,8 @@ function PortalPage({
 }
 
 function RegisterParcel() {
-  const { tenant } = useTenant();
+  const { tenant, updateTenant, activateTenant } = useTenant();
+  const { refreshProfileAfterAuth } = useAuth();
   const { from } = Route.useSearch();
   const navigate = useNavigate();
   const fromReception = from === "reception" || isReceptionRegisterMode();
@@ -217,15 +226,45 @@ function RegisterParcel() {
   const [form, setForm] = useState(empty);
   const [attempted, setAttempted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [trackingNumber, setTrackingNumber] = useState("POS-249079-ZM");
+  const [trackingNumber, setTrackingNumber] = useState("");
   const [branchOptions, setBranchOptions] = useState<Array<{ id: string; name: string }>>([]);
+  const [branchesError, setBranchesError] = useState<string | null>(null);
+  const [categoryOptions, setCategoryOptions] = useState<Array<{ id: string; name: string }>>([]);
   const set = (k: keyof FormState) => (v: string) => setForm((f) => ({ ...f, [k]: v }));
+  const categoryLabel =
+    categoryOptions.find((c) => c.id === form.category)?.name ?? form.category;
 
-  const liveCompany = isSupabaseConfigured() && /^[0-9a-f-]{36}$/i.test(tenant.id);
+  const liveCompany = isSupabaseConfigured() && isCompanyUuid(tenant.id);
 
   useEffect(() => {
     if (from === "reception") markReceptionRegisterMode();
   }, [from]);
+
+  // After counter register — land back on reception desk automatically
+  useEffect(() => {
+    if (mode !== "success" || !fromReception) return;
+    const t = window.setTimeout(() => {
+      clearReceptionRegisterMode();
+      void navigate({ to: "/app/reception" });
+    }, 2200);
+    return () => window.clearTimeout(t);
+  }, [fromReception, mode, navigate]);
+
+  // Shared-link customers: make sure we have the real company UUID (not demo tenant)
+  useEffect(() => {
+    if (!isSupabaseConfigured() || liveCompany) return;
+    if (!isCustomerPortalMode() && !tenant.slug) return;
+    let cancelled = false;
+    void (async () => {
+      const remote = await resolveCompanyPublic(tenant.slug);
+      if (cancelled || !remote || !isCompanyUuid(remote.id)) return;
+      updateTenant(remote);
+      await activateTenant(remote.slug);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activateTenant, liveCompany, tenant.slug, updateTenant]);
 
   const exitToReception = () => {
     clearReceptionRegisterMode();
@@ -234,17 +273,30 @@ function RegisterParcel() {
 
   useEffect(() => {
     if (!liveCompany) {
-      setBranchOptions(BRANCHES.map((name) => ({ id: name, name })));
+      setBranchOptions([]);
+      setCategoryOptions([]);
+      setBranchesError(
+        isSupabaseConfigured()
+          ? "Open this courier’s share link again so we can load their branches."
+          : "Connect Supabase to register live parcels.",
+      );
       return;
     }
     let cancelled = false;
+    setBranchesError(null);
     void listCompanyBranches(tenant.id).then((rows) => {
       if (cancelled) return;
       if (rows.length) {
         setBranchOptions(rows.map((b) => ({ id: b.id, name: b.name })));
+        setBranchesError(null);
       } else {
-        setBranchOptions(BRANCHES.map((name) => ({ id: name, name })));
+        setBranchOptions([]);
+        setBranchesError("This courier has no active branches yet. Ask them to add a branch in settings.");
       }
+    });
+    void listCompanyCategories(tenant.id).then((rows) => {
+      if (cancelled) return;
+      setCategoryOptions(rows);
     });
     return () => {
       cancelled = true;
@@ -252,26 +304,35 @@ function RegisterParcel() {
   }, [liveCompany, tenant.id]);
 
   const destinationLabel =
-    branchOptions.find((b) => b.id === form.destination)?.name ?? form.destination;
+    form.destination === OTHER_PROVINCE_VALUE
+      ? form.destinationOther.trim()
+      : form.destination.trim();
+  const destinationOk = Boolean(destinationLabel);
 
   const senderOk = Boolean(form.senderName.trim() && form.senderPhone.trim());
+  const accountOk =
+    checkoutAs !== "account" ||
+    (form.password.length >= 6 && form.password === form.passwordConfirm);
   const receiverOk = Boolean(
-    form.receiverName.trim() && form.receiverPhone.trim() && form.destination.trim(),
+    form.receiverName.trim() && form.receiverPhone.trim() && destinationOk,
   );
   const parcelOk = Boolean(form.description.trim());
 
   const canContinue = () => {
-    if (step === 0) return senderOk;
+    if (step === 0) return senderOk && accountOk;
     if (step === 1) return receiverOk;
     if (step === 2) return parcelOk;
-    return receiverOk && senderOk;
+    return receiverOk && senderOk && accountOk;
   };
 
   const goNext = () => {
     if (!canContinue()) {
       setAttempted(true);
-      if (step === 0) toast.error("Enter sender name and phone to continue");
-      else if (step === 1) toast.error("Receiver name, phone and destination branch are required");
+      if (step === 0) {
+        if (!senderOk) toast.error("Enter sender name and phone to continue");
+        else if (form.password.length < 6) toast.error("Password must be at least 6 characters");
+        else toast.error("Passwords do not match");
+      } else if (step === 1) toast.error("Receiver name, phone and destination province are required");
       else if (step === 2) toast.error("Add a parcel description to continue");
       return;
     }
@@ -280,27 +341,56 @@ function RegisterParcel() {
   };
 
   const submitParcel = async () => {
-    if (!senderOk || !receiverOk) {
+    if (!senderOk || !receiverOk || !accountOk) {
       setAttempted(true);
-      toast.error("Receiver and destination are required before you can finish");
+      toast.error("Receiver and destination province are required before you can finish");
       if (!receiverOk) setStep(1);
-      else if (!senderOk) setStep(0);
+      else if (!senderOk || !accountOk) setStep(0);
       return;
     }
 
     if (!liveCompany) {
-      setTrackingNumber(`POS-${Math.floor(100000 + Math.random() * 900000)}-ZM`);
-      setMode("success");
+      toast.error("Open the courier share link first", {
+        description: "Customers must use /c/company-name so parcels go to the right company.",
+      });
       return;
     }
 
     setSubmitting(true);
-    const origin = branchOptions[0];
-    if (!origin) {
-      toast.error("No branches available for this company yet");
+
+    if (checkoutAs === "account" && !fromReception) {
+      markCustomerPortalMode(tenant.slug);
+      const account = await registerCustomerAccount({
+        companyId: tenant.id,
+        companySlug: tenant.slug,
+        fullName: form.senderName.trim(),
+        phone: form.senderPhone.trim(),
+        email: form.senderEmail.trim() || null,
+        password: form.password,
+      });
+      if (account.error) {
+        setSubmitting(false);
+        toast.error("Could not create account", { description: account.error });
+        return;
+      }
+      if (account.needsEmailConfirm) {
+        toast.message("Confirm your email", {
+          description: "We sent a link — then sign in to see your parcel history.",
+        });
+      } else {
+        await refreshProfileAfterAuth();
+        toast.success("Account created — your parcels will stay on this phone");
+      }
+    }
+
+    if (!branchOptions.length) {
+      toast.error(branchesError || "No branches available for this company yet");
       setSubmitting(false);
       return;
     }
+    const origin = branchOptions[0];
+    const matched = matchBranchForProvince(branchOptions, destinationLabel);
+    const destinationId = matched ?? origin.id;
 
     const created = await createGuestParcel({
       companyId: tenant.id,
@@ -310,26 +400,34 @@ function RegisterParcel() {
       receiverName: form.receiverName.trim(),
       receiverPhone: form.receiverPhone.trim(),
       originBranchId: origin.id,
-      destinationBranchId: form.destination,
+      destinationBranchId: destinationId,
+      destinationProvince: destinationLabel,
       description: form.description.trim(),
       declaredValueCents: form.declaredValue
         ? Math.round(Number(form.declaredValue) * 100)
         : 0,
       weightKg: form.weight ? Number(form.weight) : null,
+      ...(form.category ? { categoryId: form.category } : {}),
       ...(form.instructions.trim() ? { instructions: form.instructions.trim() } : {}),
     });
 
     setSubmitting(false);
 
-    if (!created) {
+    if (!created || "error" in created) {
       toast.error("Could not register parcel", {
-        description: "Company may be paused, or guest registration is disabled.",
+        description:
+          created && "error" in created
+            ? created.error
+            : "Try again, or ask the courier to check their subscription and guest registration.",
       });
       return;
     }
 
     setTrackingNumber(created.trackingNumber);
     setMode("success");
+    if (fromReception) {
+      toast.success("Parcel registered — returning to reception");
+    }
   };
 
   if (mode === "choose") {
@@ -391,7 +489,7 @@ function RegisterParcel() {
                 type="button"
                 onClick={() => {
                   setCheckoutAs("account");
-                  setForm(accountDefaults);
+                  setForm(empty);
                   setMode("wizard");
                 }}
                 className="group flex min-h-[4.75rem] w-full flex-col justify-center rounded-2xl border-2 bg-white/95 px-3.5 py-3.5 text-left shadow-lg backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:bg-white hover:shadow-xl active:translate-y-0 md:min-h-[11.5rem] md:p-6"
@@ -451,7 +549,9 @@ function RegisterParcel() {
               </span>
               <h1 className="mt-4 text-xl font-bold sm:text-2xl">Parcel registered!</h1>
               <p className="mt-1.5 text-sm text-muted-foreground">
-                Take this reference to {destinationLabel || "your branch"} within 72 hours.
+                {fromReception
+                  ? "Returning to the reception desk…"
+                  : `Take this reference to the drop-off branch within 72 hours. Destination: ${destinationLabel || "—"}.`}
               </p>
             </div>
             <div className="grid gap-5 p-5 sm:grid-cols-[1fr_auto] sm:items-center sm:gap-6 sm:p-6">
@@ -499,7 +599,7 @@ function RegisterParcel() {
                   style={{ background: "var(--tenant-primary)", color: "var(--tenant-primary-fg)" }}
                   onClick={exitToReception}
                 >
-                  Back to reception
+                  Back to reception now
                 </Button>
               ) : (
                 <>
@@ -670,6 +770,32 @@ function RegisterParcel() {
                   />
                   <Field label="NRC (optional)" value={form.senderNrc} onChange={set("senderNrc")} large />
                   <Field label="Email (optional)" value={form.senderEmail} onChange={set("senderEmail")} large />
+                  {checkoutAs === "account" && !fromReception ? (
+                    <>
+                      <Field
+                        label="Password"
+                        value={form.password}
+                        onChange={set("password")}
+                        required
+                        error={attempted && step === 0 && form.password.length < 6}
+                        large
+                        type="password"
+                      />
+                      <Field
+                        label="Confirm password"
+                        value={form.passwordConfirm}
+                        onChange={set("passwordConfirm")}
+                        required
+                        error={
+                          attempted &&
+                          step === 0 &&
+                          (form.passwordConfirm.length < 6 || form.password !== form.passwordConfirm)
+                        }
+                        large
+                        type="password"
+                      />
+                    </>
+                  ) : null}
                 </div>
               ) : null}
 
@@ -693,30 +819,57 @@ function RegisterParcel() {
                   />
                   <div className="space-y-1.5 sm:col-span-2">
                     <Label className="md:text-sm">
-                      Destination branch <span className="text-[var(--tenant-primary)]">*</span>
+                      Destination province <span className="text-[var(--tenant-primary)]">*</span>
                     </Label>
-                    <Select value={form.destination} onValueChange={set("destination")}>
+                    <Select
+                      value={form.destination}
+                      onValueChange={(v) => {
+                        setForm((f) => ({
+                          ...f,
+                          destination: v,
+                          destinationOther: v === OTHER_PROVINCE_VALUE ? f.destinationOther : "",
+                        }));
+                      }}
+                    >
                       <SelectTrigger
                         className={cn(
                           "h-11 w-full rounded-xl border-border/80 bg-background text-base transition-all hover:border-[var(--tenant-primary)]/40 focus:ring-[var(--tenant-primary)] sm:h-12 md:h-14 md:text-lg",
-                          attempted && step === 1 && !form.destination && "border-destructive ring-1 ring-destructive/30",
+                          attempted &&
+                            step === 1 &&
+                            !destinationOk &&
+                            "border-destructive ring-1 ring-destructive/30",
                         )}
                       >
-                        <SelectValue placeholder="Select where the parcel is going" />
+                        <SelectValue placeholder="Select province" />
                       </SelectTrigger>
                       <SelectContent>
-                        {branchOptions.map((b) => (
-                          <SelectItem key={b.id} value={b.id}>
-                            {b.name}
+                        {DESTINATION_PROVINCES.map((p) => (
+                          <SelectItem key={p} value={p}>
+                            {p}
                           </SelectItem>
                         ))}
+                        <SelectItem value={OTHER_PROVINCE_VALUE}>Other — type province</SelectItem>
                       </SelectContent>
                     </Select>
-                    {attempted && step === 1 && !form.destination ? (
-                      <p className="text-xs text-destructive">Destination branch is required</p>
+                    {form.destination === OTHER_PROVINCE_VALUE ? (
+                      <Input
+                        value={form.destinationOther}
+                        onChange={(e) => set("destinationOther")(e.target.value)}
+                        placeholder="Type the province or district"
+                        className={cn(
+                          "mt-2 h-11 rounded-xl border-border/80 text-base sm:h-12 md:h-14 md:text-lg",
+                          attempted &&
+                            step === 1 &&
+                            !form.destinationOther.trim() &&
+                            "border-destructive ring-1 ring-destructive/30",
+                        )}
+                      />
+                    ) : null}
+                    {attempted && step === 1 && !destinationOk ? (
+                      <p className="text-xs text-destructive">Destination province is required</p>
                     ) : (
                       <p className="text-xs text-muted-foreground">
-                        Required — this is where the receiver will collect the parcel.
+                        Where the receiver is. If your province is missing, choose Other and type it.
                       </p>
                     )}
                   </div>
@@ -747,9 +900,9 @@ function RegisterParcel() {
                         <SelectValue placeholder="Select" />
                       </SelectTrigger>
                       <SelectContent>
-                        {CATEGORIES.map((c) => (
-                          <SelectItem key={c} value={c}>
-                            {c}
+                        {categoryOptions.map((c) => (
+                          <SelectItem key={c.id} value={c.id}>
+                            {c.name}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -806,14 +959,14 @@ function RegisterParcel() {
                       rows={[
                         ["Name", form.receiverName],
                         ["Phone", form.receiverPhone],
-                        ["Branch", destinationLabel],
+                        ["Province", destinationLabel],
                       ]}
                     />
                     <ReviewBlock
                       title="Parcel"
                       rows={[
                         ["Description", form.description],
-                        ["Category", form.category],
+                        ["Category", categoryLabel],
                         ["Value", form.declaredValue ? `ZMW ${form.declaredValue}` : "—"],
                       ]}
                     />
@@ -903,6 +1056,7 @@ function Field({
   required,
   error,
   large,
+  type = "text",
 }: {
   label: string;
   value: string;
@@ -911,6 +1065,7 @@ function Field({
   required?: boolean;
   error?: boolean;
   large?: boolean;
+  type?: "text" | "password";
 }) {
   return (
     <div className="space-y-1.5">
@@ -919,6 +1074,7 @@ function Field({
         {required ? <span className="text-[var(--tenant-primary)]"> *</span> : ""}
       </Label>
       <Input
+        type={type}
         value={value}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}

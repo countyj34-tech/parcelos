@@ -159,6 +159,31 @@ export async function loadAuthProfile(session: Session): Promise<AuthProfile> {
     .eq("is_active", true)
     .maybeSingle();
 
+  // Fallback if RLS blocked the table read
+  if (!platformUser) {
+    try {
+      const { data: isOwner } = await supabase.rpc("is_my_platform_owner");
+      if (isOwner) {
+        return {
+          userId,
+          email,
+          fullName: fallbackName || "Platform Admin",
+          initials: initials(fallbackName || "PA"),
+          role: "Super Admin",
+          roleCode: "platform_owner",
+          companyId: null,
+          companyName: "ParcelOS Platform",
+          companySlug: null,
+          branch: "Platform",
+          isPlatformOwner: true,
+          isCustomer: false,
+        };
+      }
+    } catch {
+      /* optional until migration 29 */
+    }
+  }
+
   if (platformUser) {
     const roleRow = platformUser.roles as { code: string } | null;
     const roleCode = roleRow?.code ?? "platform_owner";

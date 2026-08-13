@@ -48,7 +48,7 @@ export function PwaInstallPrompt({
 
   const copy =
     description ??
-    `Install ${label} on your phone — open it like an app with your company logo on the home screen.`;
+    `Install ${label} on your phone — home screen icon with your courier logo. Also available as ParcelOS on the App Store and Google Play.`;
 
   useEffect(() => {
     registerServiceWorker();

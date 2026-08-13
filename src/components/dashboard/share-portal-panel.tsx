@@ -110,7 +110,8 @@ export function SharePortalPanel({ compact }: { compact?: boolean }) {
             <h3 className="text-base font-semibold">Share your customer portal</h3>
             <p className="mt-1 text-sm text-muted-foreground">
               Customers who open this link or scan the QR only see {share.name} — send, track, and rates for your
-              company alone.
+              company alone. Open it in a new tab (or Install app there) so customer and company stay as two
+              systems on the same phone.
             </p>
           </div>
         ) : null}

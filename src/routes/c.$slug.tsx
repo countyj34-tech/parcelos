@@ -39,7 +39,7 @@ function CustomerTenantEntry() {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      markCustomerPortalMode();
+      markCustomerPortalMode(slug);
       const remote = await resolveCompanyPublic(slug);
       if (cancelled) return;
 

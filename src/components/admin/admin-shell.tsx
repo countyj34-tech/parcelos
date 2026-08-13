@@ -237,7 +237,7 @@ export function AdminShell({
         </main>
         <PwaInstallPrompt
           title="ParcelOS Console"
-          description="Install on this device — Super Admin stays unlocked here."
+          description="Install optional — Super Admin works on any phone after the logo pattern + owner login."
         />
       </div>
     </div>
