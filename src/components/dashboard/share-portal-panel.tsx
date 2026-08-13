@@ -9,7 +9,9 @@ import { useTenant } from "@/hooks/use-tenant";
 import { copyToClipboard } from "@/lib/clipboard";
 import {
   getCustomerPortalUrl,
+  getPublicAppOrigin,
   getWhatsAppShareUrl,
+  isPublicShareOrigin,
   resolveCustomerPortalSlug,
   type TenantBranding,
 } from "@/lib/tenant";
@@ -53,6 +55,8 @@ export function SharePortalPanel({ compact }: { compact?: boolean }) {
   const [portalUrl, setPortalUrl] = useState("");
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const publicOrigin = getPublicAppOrigin();
+  const linkIsPublic = Boolean(publicOrigin && isPublicShareOrigin(publicOrigin));
 
   useEffect(() => {
     if (companyId) void refreshTenant();
@@ -62,6 +66,10 @@ export function SharePortalPanel({ compact }: { compact?: boolean }) {
   useEffect(() => {
     const url = getCustomerPortalUrl(share);
     setPortalUrl(url);
+    if (!url.startsWith("http")) {
+      setQrDataUrl(null);
+      return;
+    }
     let cancelled = false;
     void QRCode.toDataURL(url, {
       width: 320,
@@ -77,6 +85,10 @@ export function SharePortalPanel({ compact }: { compact?: boolean }) {
   }, [share.slug, share.name, share.domain]);
 
   const copyLink = async () => {
+    if (!linkIsPublic) {
+      toast.error("Set VITE_APP_URL to your live HTTPS site first — localhost links do not work for customers");
+      return;
+    }
     const ok = await copyToClipboard(portalUrl);
     if (ok) {
       setCopied(true);
@@ -120,11 +132,19 @@ export function SharePortalPanel({ compact }: { compact?: boolean }) {
 
         <div className="space-y-2">
           <Label>{share.name} — public website link</Label>
+          {!linkIsPublic ? (
+            <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-950 dark:text-amber-100">
+              Customer links must use your <strong>live</strong> site — not localhost.
+              Set <span className="font-mono">VITE_APP_URL=https://your-site.netlify.app</span> in{" "}
+              <span className="font-mono">.env</span>, then restart the dev server. On Netlify, set the same
+              env var in Site settings.
+            </div>
+          ) : null}
           <div className="flex flex-col gap-2 sm:flex-row">
             <Input
               readOnly
               data-portal-link-input
-              value={portalUrl}
+              value={linkIsPublic ? portalUrl : `(set VITE_APP_URL) …/c/${share.slug}`}
               onFocus={(e) => e.currentTarget.select()}
               className="h-11 rounded-xl font-mono text-xs sm:text-sm"
             />
@@ -145,17 +165,43 @@ export function SharePortalPanel({ compact }: { compact?: boolean }) {
           <Button type="button" className="rounded-xl" onClick={() => void copyLink()}>
             <Copy className="mr-1.5 h-4 w-4" /> Copy website link
           </Button>
-          <Button type="button" variant="outline" className="rounded-xl" asChild>
-            <a href={getWhatsAppShareUrl(share, portalUrl)} target="_blank" rel="noreferrer">
+          <Button type="button" variant="outline" className="rounded-xl" asChild disabled={!linkIsPublic}>
+            <a
+              href={linkIsPublic ? getWhatsAppShareUrl(share, portalUrl) : undefined}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(e) => {
+                if (!linkIsPublic) {
+                  e.preventDefault();
+                  toast.error("Set VITE_APP_URL to your live HTTPS site first");
+                }
+              }}
+            >
               <MessageCircle className="mr-1.5 h-4 w-4" /> Share on WhatsApp
             </a>
           </Button>
-          <Button type="button" variant="outline" className="rounded-xl" asChild>
-            <a href={portalUrl} target="_blank" rel="noreferrer">
+          <Button type="button" variant="outline" className="rounded-xl" asChild disabled={!linkIsPublic}>
+            <a
+              href={linkIsPublic ? portalUrl : undefined}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(e) => {
+                if (!linkIsPublic) {
+                  e.preventDefault();
+                  toast.error("Set VITE_APP_URL to your live HTTPS site first");
+                }
+              }}
+            >
               <ExternalLink className="mr-1.5 h-4 w-4" /> Open as website
             </a>
           </Button>
-          <Button type="button" variant="outline" className="rounded-xl" onClick={downloadQr} disabled={!qrDataUrl}>
+          <Button
+            type="button"
+            variant="outline"
+            className="rounded-xl"
+            onClick={downloadQr}
+            disabled={!qrDataUrl || !linkIsPublic}
+          >
             <Download className="mr-1.5 h-4 w-4" /> Download QR
           </Button>
         </div>

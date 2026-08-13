@@ -9,10 +9,11 @@
 ```env
 VITE_SUPABASE_URL=https://xxxx.supabase.co
 VITE_SUPABASE_ANON_KEY=eyJ...
-VITE_APP_URL=http://localhost:3000
+VITE_APP_URL=https://your-site.netlify.app
 VITE_PLATFORM_OWNER_EMAIL=mthunzilabs@gmail.com
 ```
 
+`VITE_APP_URL` must be the **live** HTTPS site customers open (not `localhost`). Restart Vite after changing it.
 ## 2. Apply database migrations
 
 ```bash

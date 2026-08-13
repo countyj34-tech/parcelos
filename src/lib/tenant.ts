@@ -132,30 +132,49 @@ export function getCustomerPortalPath(slug: string): string {
   return `/c/${slug.trim().toLowerCase()}`;
 }
 
+function isPrivateHostname(host: string): boolean {
+  const h = host.trim().toLowerCase();
+  return (
+    h === "localhost" ||
+    h === "127.0.0.1" ||
+    h === "0.0.0.0" ||
+    h.endsWith(".local") ||
+    /^192\.168\./.test(h) ||
+    /^10\./.test(h) ||
+    /^172\.(1[6-9]|2\d|3[0-1])\./.test(h)
+  );
+}
+
+/** True when origin is safe to put on WhatsApp / QR (not your laptop). */
+export function isPublicShareOrigin(origin: string): boolean {
+  try {
+    const url = new URL(origin);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+    return !isPrivateHostname(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
 /**
- * Public website origin for customer links.
- * Prefer VITE_APP_URL when the staff app is on localhost/LAN so WhatsApp/QR
- * always point at the lasting online site (Netlify / custom domain).
+ * Public website origin for customer links / QR / WhatsApp.
+ * Never uses localhost or LAN — customers cannot open your machine.
+ * Set VITE_APP_URL=https://your-live-site.netlify.app (then restart Vite).
  */
 export function getPublicAppOrigin(fallbackOrigin?: string): string {
-  const fromEnv = (import.meta.env.VITE_APP_URL as string | undefined)?.trim().replace(/\/$/, "");
-  const isPrivateHost = (host: string) =>
-    host === "localhost" ||
-    host === "127.0.0.1" ||
-    host.endsWith(".local") ||
-    /^192\.168\./.test(host) ||
-    /^10\./.test(host) ||
-    /^172\.(1[6-9]|2\d|3[0-1])\./.test(host);
+  const candidates = [
+    (import.meta.env.VITE_APP_URL as string | undefined)?.trim().replace(/\/$/, ""),
+    fallbackOrigin?.trim().replace(/\/$/, ""),
+    typeof window !== "undefined" && !isPrivateHostname(window.location.hostname)
+      ? window.location.origin
+      : "",
+  ].filter(Boolean) as string[];
 
-  if (typeof window !== "undefined") {
-    const host = window.location.hostname;
-    if (fromEnv?.startsWith("http") && isPrivateHost(host)) return fromEnv;
-    if (!isPrivateHost(host)) return window.location.origin;
+  for (const candidate of candidates) {
+    if (candidate.startsWith("http") && isPublicShareOrigin(candidate)) return candidate;
   }
 
-  if (fallbackOrigin?.startsWith("http")) return fallbackOrigin.replace(/\/$/, "");
-  if (fromEnv?.startsWith("http")) return fromEnv;
-  return "http://localhost:3000";
+  return "";
 }
 
 /**
@@ -164,7 +183,9 @@ export function getPublicAppOrigin(fallbackOrigin?: string): string {
  */
 export function getCustomerPortalUrl(tenant: TenantBranding, origin?: string): string {
   const path = getCustomerPortalPath(tenant.slug);
-  return `${getPublicAppOrigin(origin)}${path}`;
+  const base = getPublicAppOrigin(origin);
+  // Never invent localhost — empty base means env is missing (UI warns).
+  return base ? `${base}${path}` : path;
 }
 
 /** Pretty domain companies show on posters (subdomain branding). */
