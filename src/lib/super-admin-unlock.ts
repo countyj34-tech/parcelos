@@ -59,6 +59,6 @@ export function clearSuperAdminDevice() {
 export function getPlatformOwnerLoginEmail(): string {
   return (
     (import.meta.env.VITE_PLATFORM_OWNER_EMAIL as string | undefined)?.trim() ||
-    "admin@mthunzi.tech"
+    "mthunzilabs@gmail.com"
   );
 }

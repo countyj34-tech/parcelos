@@ -102,22 +102,69 @@ export function saveTenantOverrides(overrides: Partial<TenantBranding>) {
   return next;
 }
 
-/** Path customers open from share link / QR (works on any host in demo). */
+/** URL-safe company name for `/c/{slug}` — customers must see the courier name in the link. */
+export function slugifyCompanyName(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
+}
+
+/**
+ * Prefer real company slug; if missing/demo, build from courier company name
+ * so the public link always contains the brand (e.g. `/c/mthunzi-tech-labs`).
+ */
+export function resolveCustomerPortalSlug(input: {
+  slug?: string | null;
+  name?: string | null;
+}): string | null {
+  const slug = input.slug?.trim().toLowerCase() || "";
+  if (slug && slug !== DEMO_TENANT.slug) return slug;
+  const fromName = input.name ? slugifyCompanyName(input.name) : "";
+  if (fromName && fromName !== DEMO_TENANT.slug) return fromName;
+  return slug || null;
+}
+
+/** Path customers open from share link / QR (works on any host). */
 export function getCustomerPortalPath(slug: string): string {
   return `/c/${slug.trim().toLowerCase()}`;
 }
 
 /**
- * Absolute URL for WhatsApp / social / QR.
- * On localhost uses `/c/{slug}` so the link works immediately.
- * In production the marketing domain can still be shown separately.
+ * Public website origin for customer links.
+ * Prefer VITE_APP_URL when the staff app is on localhost/LAN so WhatsApp/QR
+ * always point at the lasting online site (Netlify / custom domain).
+ */
+export function getPublicAppOrigin(fallbackOrigin?: string): string {
+  const fromEnv = (import.meta.env.VITE_APP_URL as string | undefined)?.trim().replace(/\/$/, "");
+  const isPrivateHost = (host: string) =>
+    host === "localhost" ||
+    host === "127.0.0.1" ||
+    host.endsWith(".local") ||
+    /^192\.168\./.test(host) ||
+    /^10\./.test(host) ||
+    /^172\.(1[6-9]|2\d|3[0-1])\./.test(host);
+
+  if (typeof window !== "undefined") {
+    const host = window.location.hostname;
+    if (fromEnv?.startsWith("http") && isPrivateHost(host)) return fromEnv;
+    if (!isPrivateHost(host)) return window.location.origin;
+  }
+
+  if (fallbackOrigin?.startsWith("http")) return fallbackOrigin.replace(/\/$/, "");
+  if (fromEnv?.startsWith("http")) return fromEnv;
+  return "http://localhost:3000";
+}
+
+/**
+ * Absolute customer website URL — permanent `/c/{slug}` for unlimited visitors.
+ * Same link works for WhatsApp, QR, posters, and browser bookmarks.
  */
 export function getCustomerPortalUrl(tenant: TenantBranding, origin?: string): string {
   const path = getCustomerPortalPath(tenant.slug);
-  if (typeof window !== "undefined") {
-    return `${origin ?? window.location.origin}${path}`;
-  }
-  return `https://${tenant.domain}${path}`;
+  return `${getPublicAppOrigin(origin)}${path}`;
 }
 
 /** Pretty domain companies show on posters (subdomain branding). */
@@ -132,7 +179,8 @@ export function getWhatsAppShareText(tenant: TenantBranding, portalUrl: string):
     `Send and track parcels with ${tenant.name}.`,
     tenant.tagline,
     "",
-    `Open our portal: ${portalUrl}`,
+    `Our customer website (anyone can use this link):`,
+    portalUrl,
   ].join("\n");
 }
 

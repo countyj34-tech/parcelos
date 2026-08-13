@@ -14,6 +14,7 @@ import { Route as AdminRouteImport } from './routes/admin'
 import { Route as AppRouteImport } from './routes/app'
 import { Route as JoinRouteImport } from './routes/join'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as PlatformRouteImport } from './routes/platform'
 import { Route as PortalRouteImport } from './routes/portal'
 import { Route as SignupRouteImport } from './routes/signup'
 import { Route as TrackRouteImport } from './routes/track'
@@ -67,6 +68,11 @@ const JoinRoute = JoinRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PlatformRoute = PlatformRouteImport.update({
+  id: '/platform',
+  path: '/platform',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PortalRoute = PortalRouteImport.update({
@@ -221,6 +227,7 @@ export interface FileRoutesByFullPath {
   '/app': typeof AppRouteWithChildren
   '/join': typeof JoinRoute
   '/login': typeof LoginRoute
+  '/platform': typeof PlatformRoute
   '/portal': typeof PortalRouteWithChildren
   '/signup': typeof SignupRoute
   '/track': typeof TrackRoute
@@ -256,6 +263,7 @@ export interface FileRoutesByTo {
   '/admin': typeof AdminRoute
   '/join': typeof JoinRoute
   '/login': typeof LoginRoute
+  '/platform': typeof PlatformRoute
   '/signup': typeof SignupRoute
   '/track': typeof TrackRoute
   '/app/branches': typeof AppBranchesRoute
@@ -292,6 +300,7 @@ export interface FileRoutesById {
   '/app': typeof AppRouteWithChildren
   '/join': typeof JoinRoute
   '/login': typeof LoginRoute
+  '/platform': typeof PlatformRoute
   '/portal': typeof PortalRouteWithChildren
   '/signup': typeof SignupRoute
   '/track': typeof TrackRoute
@@ -330,6 +339,7 @@ export interface FileRouteTypes {
     | '/app'
     | '/join'
     | '/login'
+    | '/platform'
     | '/portal'
     | '/signup'
     | '/track'
@@ -365,6 +375,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/join'
     | '/login'
+    | '/platform'
     | '/signup'
     | '/track'
     | '/app/branches'
@@ -400,6 +411,7 @@ export interface FileRouteTypes {
     | '/app'
     | '/join'
     | '/login'
+    | '/platform'
     | '/portal'
     | '/signup'
     | '/track'
@@ -437,6 +449,7 @@ export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   JoinRoute: typeof JoinRoute
   LoginRoute: typeof LoginRoute
+  PlatformRoute: typeof PlatformRoute
   PortalRoute: typeof PortalRouteWithChildren
   SignupRoute: typeof SignupRoute
   TrackRoute: typeof TrackRoute
@@ -479,6 +492,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/platform': {
+      id: '/platform'
+      path: '/platform'
+      fullPath: '/platform'
+      preLoaderRoute: typeof PlatformRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/portal': {
@@ -768,6 +788,7 @@ const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   JoinRoute: JoinRoute,
   LoginRoute: LoginRoute,
+  PlatformRoute: PlatformRoute,
   PortalRoute: PortalRouteWithChildren,
   SignupRoute: SignupRoute,
   TrackRoute: TrackRoute,

@@ -31,7 +31,7 @@ export function getSupabaseEnv(): SupabaseEnv | null {
     anonKey: import.meta.env.VITE_SUPABASE_ANON_KEY as string,
     appUrl: getAuthRedirectBase(),
     platformOwnerEmail:
-      (import.meta.env.VITE_PLATFORM_OWNER_EMAIL as string | undefined) ?? "admin@mthunzi.tech",
+      (import.meta.env.VITE_PLATFORM_OWNER_EMAIL as string | undefined) ?? "mthunzilabs@gmail.com",
   };
 }
 

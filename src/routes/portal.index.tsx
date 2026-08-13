@@ -9,7 +9,11 @@ export const Route = createFileRoute("/portal/")({
   head: () => ({
     meta: [
       { title: "Customer portal" },
-      { name: "description", content: "Official courier customer portal — send and track parcels." },
+      {
+        name: "description",
+        content: "Official courier website — anyone can send and track parcels with this company.",
+      },
+      { name: "robots", content: "index,follow" },
     ],
   }),
   component: PortalHome,

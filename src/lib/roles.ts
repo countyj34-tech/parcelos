@@ -113,7 +113,7 @@ export const ROLE_USERS: Record<
   UserRole,
   { name: string; email: string; initials: string; branch: string }
 > = {
-  "Super Admin": { name: "Admin User", email: "admin@mthunzi.tech", initials: "AU", branch: "Platform" },
+  "Super Admin": { name: "Mthunzi Tech Labs", email: "mthunzilabs@gmail.com", initials: "MT", branch: "Platform" },
   "Company Admin": { name: "Linda Chirwa", email: "linda@swiftlogistics.zm", initials: "LC", branch: "All Branches" },
   "Branch Manager": { name: "Chileshe Mumba", email: "chileshe@swiftlogistics.zm", initials: "CM", branch: "Lusaka — Cairo Road" },
   Receptionist: { name: "Emmanuel Daka", email: "emmanuel@swiftlogistics.zm", initials: "ED", branch: "Lusaka — Cairo Road" },

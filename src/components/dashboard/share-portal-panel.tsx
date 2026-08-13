@@ -9,8 +9,8 @@ import { useTenant } from "@/hooks/use-tenant";
 import { copyToClipboard } from "@/lib/clipboard";
 import {
   getCustomerPortalUrl,
-  getPublicPortalLabel,
   getWhatsAppShareUrl,
+  resolveCustomerPortalSlug,
   type TenantBranding,
 } from "@/lib/tenant";
 import { toast } from "sonner";
@@ -20,11 +20,13 @@ function shareTenant(
   companyName: string | undefined,
   companySlug: string | null | undefined,
 ): TenantBranding {
-  const name = tenant.name && tenant.name !== "Swift Logistics" ? tenant.name : companyName || tenant.name;
+  const name =
+    tenant.name && tenant.name !== "Swift Logistics" ? tenant.name : companyName || tenant.name;
   const slug =
-    tenant.slug && tenant.slug !== "swift-logistics"
-      ? tenant.slug
-      : companySlug?.trim().toLowerCase() || tenant.slug;
+    resolveCustomerPortalSlug({
+      slug: companySlug || tenant.slug,
+      name: name || companyName,
+    }) || tenant.slug;
   const domain =
     tenant.domain && !tenant.domain.startsWith("swiftlogistics.")
       ? tenant.domain
@@ -32,7 +34,7 @@ function shareTenant(
   return {
     ...tenant,
     name: name || tenant.name,
-    slug: slug || tenant.slug,
+    slug,
     domain,
     logoInitials:
       (name || tenant.name)
@@ -107,17 +109,17 @@ export function SharePortalPanel({ compact }: { compact?: boolean }) {
       <div className="space-y-5">
         {!compact ? (
           <div>
-            <h3 className="text-base font-semibold">Share your customer portal</h3>
+            <h3 className="text-base font-semibold">Your customer website</h3>
             <p className="mt-1 text-sm text-muted-foreground">
-              Customers who open this link or scan the QR only see {share.name} — send, track, and rates for your
-              company alone. Open it in a new tab (or Install app there) so customer and company stay as two
-              systems on the same phone.
+              One permanent link for {share.name}. Unlimited people can open it — guests or signed-in
+              customers — to send and track parcels. Share it as a website, WhatsApp, or QR; it stays the
+              same as long as your company slug does.
             </p>
           </div>
         ) : null}
 
         <div className="space-y-2">
-          <Label>Customer link</Label>
+          <Label>{share.name} — public website link</Label>
           <div className="flex flex-col gap-2 sm:flex-row">
             <Input
               readOnly
@@ -132,15 +134,16 @@ export function SharePortalPanel({ compact }: { compact?: boolean }) {
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">
-            Public brand address: <span className="font-medium text-foreground">{getPublicPortalLabel(share)}</span>
+            Includes your company name in the path:{" "}
+            <span className="font-mono text-foreground">/c/{share.slug}</span>
             {" · "}
-            Path: <span className="font-mono text-foreground">/c/{share.slug}</span>
+            Anyone with the link can use it (no one-time lock).
           </p>
         </div>
 
         <div className="flex flex-wrap gap-2">
           <Button type="button" className="rounded-xl" onClick={() => void copyLink()}>
-            <Copy className="mr-1.5 h-4 w-4" /> Copy link
+            <Copy className="mr-1.5 h-4 w-4" /> Copy website link
           </Button>
           <Button type="button" variant="outline" className="rounded-xl" asChild>
             <a href={getWhatsAppShareUrl(share, portalUrl)} target="_blank" rel="noreferrer">
@@ -149,7 +152,7 @@ export function SharePortalPanel({ compact }: { compact?: boolean }) {
           </Button>
           <Button type="button" variant="outline" className="rounded-xl" asChild>
             <a href={portalUrl} target="_blank" rel="noreferrer">
-              <ExternalLink className="mr-1.5 h-4 w-4" /> Open portal
+              <ExternalLink className="mr-1.5 h-4 w-4" /> Open as website
             </a>
           </Button>
           <Button type="button" variant="outline" className="rounded-xl" onClick={downloadQr} disabled={!qrDataUrl}>
@@ -159,9 +162,12 @@ export function SharePortalPanel({ compact }: { compact?: boolean }) {
 
         {!compact ? (
           <ol className="list-decimal space-y-2 rounded-2xl border border-border bg-muted/30 p-4 pl-8 text-sm text-muted-foreground">
-            <li>Copy the link or download the QR for your counter / social posts.</li>
-            <li>Customers tap or scan → your branded portal opens (not another company).</li>
-            <li>Optional: they can install to the home screen when prompted.</li>
+            <li>
+              This is your online customer site — paste it on Facebook, WhatsApp status, or print the QR at the
+              counter.
+            </li>
+            <li>Many customers can use the same link at once; each person sends and tracks their own parcels.</li>
+            <li>Optional: they can Install / Add to Home Screen for an app-like icon with your logo.</li>
           </ol>
         ) : null}
       </div>

@@ -16,35 +16,26 @@ import {
 import { useAuth } from "@/hooks/use-auth";
 import { PLATFORM_OWNER, PRODUCT_NAME } from "@/lib/brand";
 import { DEMO_ROLES, ROLE_USERS, getHomeRouteForRole, type UserRole } from "@/lib/roles";
-import {
-  getPlatformOwnerLoginEmail,
-  isSuperAdminPatternUnlocked,
-  markSuperAdminDevice,
-} from "@/lib/super-admin-unlock";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 const HERO_IMAGE = "/images/hero-courier-ops.jpg";
 
+/**
+ * Company staff login only (Company Admin, Receptionist, …).
+ * Super admin / platform owner: logo pattern → /platform (separate page).
+ */
 export const Route = createFileRoute("/login")({
-  validateSearch: (search: Record<string, unknown>) => ({
-    platform: search.platform === "1" || search.platform === 1 || search.platform === true ? ("1" as const) : undefined,
-  }),
   head: () => ({
     meta: [
       { title: `Sign in — ${PRODUCT_NAME}` },
-      { name: "description", content: `Sign in to your ${PRODUCT_NAME} courier workspace.` },
+      { name: "description", content: `Sign in to your ${PRODUCT_NAME} courier company workspace.` },
     ],
   }),
   component: LoginPage,
 });
 
-/** Staff roles only — owners sign in here, not platform SaaS marketing. */
-const LOGIN_ROLES: UserRole[] = [...DEMO_ROLES, "Super Admin"];
-
-const ROLE_LABELS: Partial<Record<UserRole, string>> = {
-  "Super Admin": "System Administrator",
-};
+const LOGIN_ROLES: UserRole[] = DEMO_ROLES.filter((r) => r !== "Super Admin");
 
 function LiveClock({ className }: { className?: string }) {
   const [now, setNow] = useState(() => new Date());
@@ -82,22 +73,11 @@ function LiveClock({ className }: { className?: string }) {
 
 function LoginPage() {
   const navigate = useNavigate();
-  const { platform: platformSearch } = Route.useSearch();
   const { signIn, resetPassword, isDemoMode, setDemoRole } = useAuth();
-  const platformMode = platformSearch === "1" || isSuperAdminPatternUnlocked();
-  const [role, setRole] = useState<UserRole>(platformMode ? "Super Admin" : "Company Admin");
-  const [email, setEmail] = useState(() =>
-    platformMode || isDemoMode ? (platformMode ? getPlatformOwnerLoginEmail() : ROLE_USERS[role].email) : "",
-  );
+  const [role, setRole] = useState<UserRole>("Company Admin");
+  const [email, setEmail] = useState(() => (isDemoMode ? ROLE_USERS["Company Admin"].email : ""));
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    if (!platformMode) return;
-    markSuperAdminDevice();
-    setRole("Super Admin");
-    setEmail(getPlatformOwnerLoginEmail());
-  }, [platformMode]);
 
   const handleRoleChange = (next: UserRole) => {
     setRole(next);
@@ -109,22 +89,17 @@ function LoginPage() {
     setLoading(true);
 
     if (isDemoMode) {
-      if (role === "Super Admin") markSuperAdminDevice();
       setDemoRole(role);
       void navigate({ to: getHomeRouteForRole(role) });
       setLoading(false);
       return;
     }
 
-    const result = await signIn(email, password);
+    const result = await signIn(email.trim().toLowerCase(), password);
     if (result.error) {
       toast.error(result.error);
       setLoading(false);
       return;
-    }
-
-    if (platformMode) {
-      markSuperAdminDevice();
     }
 
     void navigate({ to: result.redirect });
@@ -167,20 +142,10 @@ function LoginPage() {
         <div className="grid flex-1 items-center gap-8 py-8 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] lg:gap-12 lg:py-6">
           <FadeIn className="flex w-full justify-center lg:justify-start">
             <div className="w-full max-w-xl rounded-3xl border border-white/10 bg-background/95 p-6 shadow-2xl backdrop-blur-xl sm:p-8 md:max-w-2xl md:p-10 lg:min-h-[min(68vh,38rem)]">
-              <h1 className="font-display text-2xl font-bold tracking-tight sm:text-3xl">
-                {platformMode ? "Platform console" : "Welcome back"}
-              </h1>
+              <h1 className="font-display text-2xl font-bold tracking-tight sm:text-3xl">Welcome back</h1>
               <p className="mt-2 text-sm text-muted-foreground sm:text-base">
-                {platformMode
-                  ? `Sign in with your ${PLATFORM_OWNER} owner account — works on this phone or any device after the logo pattern.`
-                  : "Sign in to your courier company workspace"}
+                Sign in to your courier company workspace — reception, parcels, and your brand.
               </p>
-
-              {platformMode ? (
-                <div className="mt-4 rounded-xl border border-teal-600/30 bg-teal-600/10 px-3 py-2 text-xs text-teal-900 dark:text-teal-100">
-                  Pattern unlocked on this device. Use your platform owner email and password.
-                </div>
-              ) : null}
 
               <form className="mt-7 space-y-5" onSubmit={(e) => void handleSubmit(e)}>
                 {isDemoMode ? (
@@ -193,7 +158,7 @@ function LoginPage() {
                       <SelectContent>
                         {LOGIN_ROLES.map((r) => (
                           <SelectItem key={r} value={r}>
-                            {ROLE_LABELS[r] ?? r}
+                            {r}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -202,7 +167,7 @@ function LoginPage() {
                 ) : null}
 
                 <div className="space-y-2">
-                  <Label htmlFor="email">{platformMode ? "Platform owner email" : "Work email"}</Label>
+                  <Label htmlFor="email">Work email</Label>
                   <div className="relative">
                     <Mail className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
@@ -249,19 +214,16 @@ function LoginPage() {
                   disabled={loading}
                   className="h-12 w-full rounded-xl bg-teal-700 text-base text-white hover:bg-teal-600 md:h-14"
                 >
-                  {loading ? "Signing in…" : platformMode ? "Open platform console" : "Sign in to workspace"}{" "}
-                  <ArrowRight className="ml-2 h-4 w-4" />
+                  {loading ? "Signing in…" : "Sign in to workspace"} <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
               </form>
 
-              {platformMode ? null : (
               <div className="mt-8 space-y-4 border-t border-border pt-6 text-center">
-                <p className="text-sm text-muted-foreground">Don&apos;t have an account yet?</p>
+                <p className="text-sm text-muted-foreground">Don&apos;t have a company account yet?</p>
                 <Button asChild variant="outline" className="h-12 w-full rounded-xl text-base md:h-14">
-                  <Link to="/signup">Create account</Link>
+                  <Link to="/signup">Create your brand</Link>
                 </Button>
               </div>
-              )}
             </div>
           </FadeIn>
 

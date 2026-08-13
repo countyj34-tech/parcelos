@@ -10,7 +10,7 @@
 VITE_SUPABASE_URL=https://xxxx.supabase.co
 VITE_SUPABASE_ANON_KEY=eyJ...
 VITE_APP_URL=http://localhost:3000
-VITE_PLATFORM_OWNER_EMAIL=admin@mthunzi.tech
+VITE_PLATFORM_OWNER_EMAIL=mthunzilabs@gmail.com
 ```
 
 ## 2. Apply database migrations
@@ -33,14 +33,24 @@ supabase db reset
 ### Platform owner (MTHUNZI-TECH-LABS)
 
 1. Supabase Dashboard → **Authentication** → **Users** → **Add user**
-2. Email: `admin@mthunzi.tech`, set a password
-3. SQL Editor:
+2. Email: `mthunzilabs@gmail.com`
+3. Password: set your private password (never commit it to git)
+4. Turn **Auto Confirm User** ON (so you can sign in immediately)
+5. SQL Editor:
 
 ```sql
-SELECT public.bootstrap_platform_admin('admin@mthunzi.tech');
+SELECT public.bootstrap_platform_admin('mthunzilabs@gmail.com');
 ```
 
-Sign in at `/login` → redirects to `/admin`.
+Also set in `.env` / Netlify:
+
+```env
+VITE_PLATFORM_OWNER_EMAIL=mthunzilabs@gmail.com
+```
+
+Sign in: tap the ParcelOS logo pattern → `/platform` → email + password.  
+Works on **any phone or computer** after the pattern + correct credentials.  
+Company staff use `/login` only (not the platform console).
 
 ### Company admin (Swift Logistics demo)
 

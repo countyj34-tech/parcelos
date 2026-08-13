@@ -8,17 +8,18 @@ import { registerServiceWorker } from "@/lib/pwa";
 import type { TenantBranding } from "@/lib/tenant";
 
 /**
- * Customer entry from share link / QR.
- * Shows the real courier company name + logo immediately, then opens their portal.
+ * Customer entry from share link / QR / public website.
+ * One permanent `/c/{slug}` — unlimited visitors; each person uses the same company site.
  */
 export const Route = createFileRoute("/c/$slug")({
   head: ({ params }) => ({
     meta: [
-      { title: `Courier portal — ${params.slug}` },
+      { title: `Customer website — ${params.slug}` },
       {
         name: "description",
-        content: "Official customer portal for this courier company.",
+        content: "Public courier website — send and track parcels. Open to everyone with this link.",
       },
+      { name: "robots", content: "index,follow" },
     ],
   }),
   component: CustomerTenantEntry,

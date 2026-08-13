@@ -951,7 +951,7 @@ export function AccountSection() {
       <AdminPageHeader title="My account" description="Your platform admin profile" />
       <div className="max-w-md space-y-4 rounded-xl border border-border bg-card p-6 shadow-card">
         <div className="space-y-2"><Label>Full name</Label><Input defaultValue="Admin User" className="h-11 rounded-lg" /></div>
-        <div className="space-y-2"><Label>Email</Label><Input defaultValue="admin@mthunzi.tech" className="h-11 rounded-lg" /></div>
+        <div className="space-y-2"><Label>Email</Label><Input defaultValue="mthunzilabs@gmail.com" className="h-11 rounded-lg" /></div>
         <div className="space-y-2"><Label>Role</Label><Input defaultValue="Super Admin" disabled className="h-11 rounded-lg" /></div>
         <Button className="rounded-lg">Update profile</Button>
         <Button variant="outline" className="w-full rounded-lg">Change password</Button>

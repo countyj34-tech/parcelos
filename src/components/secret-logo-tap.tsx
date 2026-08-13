@@ -43,7 +43,7 @@ export function SecretLogoTap({
       toast.success("Pattern accepted", {
         description: "Sign in with your platform owner email & password.",
       });
-      window.location.href = "/login?platform=1";
+      void navigate({ to: "/platform" });
     };
 
     void goPlatformLogin();
