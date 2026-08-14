@@ -46,6 +46,8 @@ type AuthContextValue = {
   setDemoRole: (role: UserRole) => void;
   /** Logo pattern → SaaS console (no login screen). */
   enterSuperAdminConsole: () => Promise<void>;
+  /** Exit SaaS console / login gate and return to company home. */
+  leaveSuperAdminConsole: () => Promise<void>;
   /** After step-2 Supabase sign-in on /admin. */
   completeSuperAdminLogin: () => Promise<void>;
   refreshProfileAfterAuth: () => Promise<void>;
@@ -386,6 +388,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfile(null);
   }, [isDemoMode, setDemoRole, refreshProfile, applySuperAdminProfile]);
 
+  /** Leave SaaS login / console and return to the company app. */
+  const leaveSuperAdminConsole = useCallback(async () => {
+    clearSuperAdminDevice();
+    setSaasPatternActive(false);
+
+    if (isDemoMode) {
+      setProfile(demoProfile("Company Admin"));
+      window.location.href = "/";
+      return;
+    }
+
+    const supabase = getSupabase();
+    if (supabase) {
+      const { data } = await supabase.auth.getSession();
+      if (data.session) {
+        const loaded = await loadAuthProfile(data.session).catch(() => null);
+        if (loaded?.isPlatformOwner) {
+          await supabase.auth.signOut();
+          setSession(null);
+          setUser(null);
+          setProfile(null);
+        }
+      }
+    } else {
+      setSession(null);
+      setUser(null);
+      setProfile(null);
+    }
+
+    window.location.href = "/";
+  }, [isDemoMode]);
+
   const role =
     profile?.role ??
     (saasPatternActive || (patternUnlocked && profile?.isPlatformOwner) ? "Super Admin" : "Company Admin");
@@ -435,6 +469,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       resetPassword,
       setDemoRole,
       enterSuperAdminConsole,
+      leaveSuperAdminConsole,
       completeSuperAdminLogin,
       refreshProfileAfterAuth,
     }),
@@ -456,6 +491,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       resetPassword,
       setDemoRole,
       enterSuperAdminConsole,
+      leaveSuperAdminConsole,
       completeSuperAdminLogin,
       refreshProfileAfterAuth,
     ],

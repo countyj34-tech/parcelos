@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Link } from "@tanstack/react-router";
 import { ArrowLeft, Lock, Shield, User } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -16,7 +15,7 @@ const emptyGate1 = { email: "", password: "" };
 const emptyGate2 = { phone: "", name: "", email: "", password: "" };
 
 export function SaasAdminLogin() {
-  const { completeSuperAdminLogin } = useAuth();
+  const { completeSuperAdminLogin, leaveSuperAdminConsole } = useAuth();
   const [step, setStep] = useState<Step>(1);
   const [busy, setBusy] = useState(false);
 
@@ -219,8 +218,14 @@ export function SaasAdminLogin() {
           </form>
         )}
 
-        <Button asChild variant="outline" className="mt-4 w-full rounded-xl">
-          <Link to="/">Leave console</Link>
+        <Button
+          type="button"
+          variant="outline"
+          className="mt-4 w-full rounded-xl"
+          disabled={busy}
+          onClick={() => void leaveSuperAdminConsole()}
+        >
+          Leave console
         </Button>
       </div>
     </div>

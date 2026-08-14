@@ -1,5 +1,4 @@
 import { type ReactNode } from "react";
-import { Link } from "@tanstack/react-router";
 import { Shield } from "lucide-react";
 import { AuthLoadingScreen } from "@/components/auth/auth-guard";
 import { SaasAdminLogin } from "@/components/auth/saas-admin-login";
@@ -12,7 +11,7 @@ import { isSuperAdminPatternUnlocked } from "@/lib/super-admin-unlock";
  * SaaS Super Admin only — logo pattern + two-step owner login.
  */
 export function SaasAdminGate({ children }: { children: ReactNode }) {
-  const { isLoading, isSaasSuperAdmin, isDemoMode } = useAuth();
+  const { isLoading, isSaasSuperAdmin, isDemoMode, leaveSuperAdminConsole } = useAuth();
   const patternUnlocked =
     typeof window !== "undefined" ? isSuperAdminPatternUnlocked() : false;
 
@@ -34,8 +33,12 @@ export function SaasAdminGate({ children }: { children: ReactNode }) {
           <p className="mt-2 text-xs text-muted-foreground">
             After the pattern you will sign in twice with owner credentials.
           </p>
-          <Button asChild className="mt-6 w-full rounded-xl bg-teal-700 hover:bg-teal-600">
-            <Link to="/">Go to home</Link>
+          <Button
+            type="button"
+            className="mt-6 w-full rounded-xl bg-teal-700 hover:bg-teal-600"
+            onClick={() => void leaveSuperAdminConsole()}
+          >
+            Go to home
           </Button>
         </div>
       </div>

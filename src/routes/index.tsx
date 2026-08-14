@@ -7,7 +7,6 @@ import { PLATFORM_OWNER, PRODUCT_NAME } from "@/lib/brand";
 import { clearCustomerPortalMode } from "@/lib/portal-mode";
 import { useAuth } from "@/hooks/use-auth";
 import { getHomeRouteForRole } from "@/lib/roles";
-import { isSuperAdminPatternUnlocked } from "@/lib/super-admin-unlock";
 import { useEffect } from "react";
 
 const HERO_IMAGE = "/images/hero-courier-ops.jpg";
@@ -41,11 +40,8 @@ function CompanyHome() {
 
   useEffect(() => {
     if (isLoading) return;
+    // Only bounce fully signed-in SaaS owners — pattern-only (login gate) must be able to leave to company home
     if (isSaasSuperAdmin) {
-      void navigate({ to: "/admin", search: { section: "overview", company: undefined }, replace: true });
-      return;
-    }
-    if (isSuperAdminPatternUnlocked()) {
       void navigate({ to: "/admin", search: { section: "overview", company: undefined }, replace: true });
       return;
     }
