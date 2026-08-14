@@ -2,17 +2,9 @@ import { useEffect, type ReactNode } from "react";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { useAuth } from "@/hooks/use-auth";
 import { canAccessRoute, getHomeRouteForRole } from "@/lib/roles";
+import { SplashScreen } from "@/components/splash-screen";
 
-export function AuthLoadingScreen() {
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="text-center">
-        <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-        <p className="mt-4 text-sm text-muted-foreground">Loading session…</p>
-      </div>
-    </div>
-  );
-}
+export { AuthLoadingScreen } from "@/components/splash-screen";
 
 type GuardProps = {
   children: ReactNode;
@@ -74,16 +66,18 @@ export function AuthGuard({ children, requirePlatform, requireStaff, requireCust
     navigate,
   ]);
 
-  if (isLoading) return <AuthLoadingScreen />;
+  if (isLoading) {
+    return <SplashScreen variant={requirePlatform ? "admin" : "company"} />;
+  }
 
   if (requirePlatform && !isSaasSuperAdmin) {
-    return <AuthLoadingScreen />;
+    return <SplashScreen variant="admin" />;
   }
 
   if (!isAuthenticated && !isDemoMode && !requirePlatform) return null;
 
   if (requireStaff && !canAccessRoute(role, pathname) && !isSaasSuperAdmin) {
-    return <AuthLoadingScreen />;
+    return <SplashScreen variant="company" />;
   }
 
   return <>{children}</>;

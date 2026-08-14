@@ -9,6 +9,7 @@ import {
 } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
 import { Toaster } from "@/components/ui/sonner";
+import { RouteSplashOverlay } from "@/components/splash-screen";
 import { AuthProvider } from "@/hooks/use-auth";
 import { TenantProvider } from "@/hooks/use-tenant";
 
@@ -138,6 +139,7 @@ function RootComponent() {
       <AuthProvider>
         <TenantProvider>
           <Outlet />
+          <RouteSplashOverlay />
           <Toaster richColors position="top-right" />
         </TenantProvider>
       </AuthProvider>

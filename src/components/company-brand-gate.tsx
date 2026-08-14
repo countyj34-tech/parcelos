@@ -4,6 +4,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useTenant } from "@/hooks/use-tenant";
 import { isBrandSetupComplete, isCompanyUuid } from "@/lib/api/company-brand";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { SplashScreen } from "@/components/splash-screen";
 
 const ALLOWED_WITHOUT_BRAND = ["/app/onboarding", "/app/settings", "/login"];
 
@@ -67,9 +68,10 @@ export function CompanyBrandGate({ children }: { children: React.ReactNode }) {
 
   if (!ready || (isLoading && !isDemoMode)) {
     return (
-      <div className="grid min-h-svh place-items-center bg-background">
-        <p className="text-sm text-muted-foreground">Loading company…</p>
-      </div>
+      <SplashScreen
+        variant="company"
+        subtitle={tenant.name && tenant.name !== "Your company" ? tenant.name : "Loading your company…"}
+      />
     );
   }
 

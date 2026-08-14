@@ -1,6 +1,6 @@
 import { lazy, Suspense } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { AuthLoadingScreen } from "@/components/auth/auth-guard";
+import { AuthLoadingScreen } from "@/components/splash-screen";
 import { ClientOnly } from "@/components/client-only";
 import { ProductMeta } from "@/components/logo";
 import type { AdminSection } from "@/components/admin/admin-shell";

@@ -8,6 +8,7 @@ import { clearCustomerPortalMode } from "@/lib/portal-mode";
 import { useAuth } from "@/hooks/use-auth";
 import { getHomeRouteForRole } from "@/lib/roles";
 import { useEffect } from "react";
+import { SplashScreen } from "@/components/splash-screen";
 
 const HERO_IMAGE = "/images/hero-courier-ops.jpg";
 
@@ -54,6 +55,10 @@ function CompanyHome() {
       void navigate({ to: getHomeRouteForRole(role), replace: true });
     }
   }, [isAuthenticated, isCustomer, isDemoMode, isLoading, isSaasSuperAdmin, navigate, role]);
+
+  if (isLoading) {
+    return <SplashScreen variant="company" subtitle="Starting ParcelOS…" />;
+  }
 
   return (
     <div className="relative flex min-h-dvh flex-col overflow-hidden">

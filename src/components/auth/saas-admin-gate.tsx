@@ -1,6 +1,6 @@
 import { type ReactNode } from "react";
 import { Shield } from "lucide-react";
-import { AuthLoadingScreen } from "@/components/auth/auth-guard";
+import { SplashScreen } from "@/components/splash-screen";
 import { SaasAdminLogin } from "@/components/auth/saas-admin-login";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
@@ -15,7 +15,7 @@ export function SaasAdminGate({ children }: { children: ReactNode }) {
   const patternUnlocked =
     typeof window !== "undefined" ? isSuperAdminPatternUnlocked() : false;
 
-  if (isLoading) return <AuthLoadingScreen />;
+  if (isLoading) return <SplashScreen variant="admin" />;
 
   if (!patternUnlocked && !isDemoMode) {
     return (
