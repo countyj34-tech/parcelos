@@ -14,7 +14,7 @@ export const Route = createFileRoute("/portal")({
 
 function PortalLayout() {
   const navigate = useNavigate();
-  const { isAuthenticated, isDemoMode, isPlatformOwner, isCustomer, role } = useAuth();
+  const { isAuthenticated, isDemoMode, isSaasSuperAdmin, isCustomer, role } = useAuth();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const searchStr = useRouterState({ select: (s) => s.location.searchStr });
   useTenantPwaManifest();
@@ -22,7 +22,7 @@ function PortalLayout() {
   const staffWalkIn =
     pathname.startsWith("/portal/register") &&
     (searchStr.includes("from=reception") || isReceptionRegisterMode());
-  const staffOk = (isAuthenticated || isDemoMode) && !isPlatformOwner && !isCustomer;
+  const staffOk = (isAuthenticated || isDemoMode) && !isSaasSuperAdmin && !isCustomer;
   const customerOk = isCustomerPortalMode() || isCustomer;
   // Staff can preview/install customer portal on the same device without losing company login
   const allowed =

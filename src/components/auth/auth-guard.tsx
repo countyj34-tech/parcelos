@@ -21,27 +21,29 @@ type GuardProps = {
   requireCustomer?: boolean;
 };
 
-/** Client-side route guard — redirects unauthenticated users and enforces role pages. */
+/** Client-side route guard — company staff vs SaaS super admin stay separate. */
 export function AuthGuard({ children, requirePlatform, requireStaff, requireCustomer }: GuardProps) {
-  const { isLoading, isAuthenticated, isPlatformOwner, isCustomer, isDemoMode, role } = useAuth();
+  const { isLoading, isAuthenticated, isSaasSuperAdmin, isCustomer, isDemoMode, role } = useAuth();
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
   useEffect(() => {
     if (isLoading) return;
 
-    if (!isAuthenticated && !isDemoMode && !isPlatformOwner) {
+    // SaaS console — logo pattern only
+    if (requirePlatform && !isSaasSuperAdmin) {
+      void navigate({ to: "/", replace: true });
+      return;
+    }
+
+    // Company workspace — not for SaaS super admin session
+    if (requireStaff && isSaasSuperAdmin) {
+      void navigate({ to: "/admin", search: { section: "overview", company: undefined } });
+      return;
+    }
+
+    if (!isAuthenticated && !isDemoMode && !requirePlatform) {
       void navigate({ to: "/login" });
-      return;
-    }
-
-    if (requirePlatform && !isPlatformOwner && !(isDemoMode && role === "Super Admin")) {
-      void navigate({ to: getHomeRouteForRole(role) });
-      return;
-    }
-
-    if (requireStaff && isPlatformOwner) {
-      void navigate({ to: "/admin" });
       return;
     }
 
@@ -61,7 +63,7 @@ export function AuthGuard({ children, requirePlatform, requireStaff, requireCust
   }, [
     isLoading,
     isAuthenticated,
-    isPlatformOwner,
+    isSaasSuperAdmin,
     isCustomer,
     isDemoMode,
     requirePlatform,
@@ -74,13 +76,13 @@ export function AuthGuard({ children, requirePlatform, requireStaff, requireCust
 
   if (isLoading) return <AuthLoadingScreen />;
 
-  if (!isAuthenticated && !isDemoMode && !isPlatformOwner) return null;
-
-  if (requirePlatform && !isPlatformOwner && !(isDemoMode && role === "Super Admin")) {
+  if (requirePlatform && !isSaasSuperAdmin) {
     return <AuthLoadingScreen />;
   }
 
-  if (requireStaff && !canAccessRoute(role, pathname) && !isPlatformOwner) {
+  if (!isAuthenticated && !isDemoMode && !requirePlatform) return null;
+
+  if (requireStaff && !canAccessRoute(role, pathname) && !isSaasSuperAdmin) {
     return <AuthLoadingScreen />;
   }
 

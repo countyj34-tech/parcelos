@@ -8,12 +8,12 @@ import { isSupabaseConfigured } from "@/lib/supabase/config";
 
 /** Soft nudge while company is still on the 14-day free trial. */
 export function TrialBanner() {
-  const { role, isPlatformOwner, isDemoMode } = useAuth();
+  const { role, isSaasSuperAdmin, isDemoMode } = useAuth();
   const [daysLeft, setDaysLeft] = useState<number | null>(null);
   const [show, setShow] = useState(false);
 
   useEffect(() => {
-    if (!isSupabaseConfigured() || isPlatformOwner || isDemoMode) return;
+    if (!isSupabaseConfigured() || isSaasSuperAdmin || isDemoMode) return;
     let cancelled = false;
     void fetchCompanyBilling().then((b) => {
       if (cancelled || !b) return;
@@ -27,7 +27,7 @@ export function TrialBanner() {
     return () => {
       cancelled = true;
     };
-  }, [isPlatformOwner, isDemoMode]);
+  }, [isSaasSuperAdmin, isDemoMode]);
 
   if (!show || daysLeft == null) return null;
 

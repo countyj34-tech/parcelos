@@ -32,7 +32,7 @@ export const Route = createFileRoute("/")({
  */
 function CompanyHome() {
   const navigate = useNavigate();
-  const { isAuthenticated, isDemoMode, isPlatformOwner, isCustomer, role, isLoading } = useAuth();
+  const { isAuthenticated, isDemoMode, isSaasSuperAdmin, isCustomer, role, isLoading } = useAuth();
 
   useEffect(() => {
     clearCustomerPortalMode();
@@ -40,8 +40,8 @@ function CompanyHome() {
 
   useEffect(() => {
     if (isLoading) return;
-    if (isPlatformOwner) {
-      void navigate({ to: "/admin", replace: true });
+    if (isSaasSuperAdmin) {
+      void navigate({ to: "/admin", search: { section: "overview", company: undefined }, replace: true });
       return;
     }
     if (isCustomer) {
@@ -52,7 +52,7 @@ function CompanyHome() {
     if (isAuthenticated && !isDemoMode) {
       void navigate({ to: getHomeRouteForRole(role), replace: true });
     }
-  }, [isAuthenticated, isCustomer, isDemoMode, isLoading, isPlatformOwner, navigate, role]);
+  }, [isAuthenticated, isCustomer, isDemoMode, isLoading, isSaasSuperAdmin, navigate, role]);
 
   return (
     <div className="relative flex min-h-dvh flex-col overflow-hidden">

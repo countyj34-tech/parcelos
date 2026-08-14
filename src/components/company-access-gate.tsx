@@ -20,7 +20,7 @@ const BILLING_ESCAPE = ["/app/subscription", "/app/support", "/login", "/signup"
 /** Blocks company staff app + customer portal when paused/suspended/expired — allows billing escape hatch. */
 export function CompanyAccessGate({ children }: { children: React.ReactNode }) {
   const { tenant } = useTenant();
-  const { isPlatformOwner, role } = useAuth();
+  const { isSaasSuperAdmin, role } = useAuth();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const [blocked, setBlocked] = useState(false);
   const [statusLabel, setStatusLabel] = useState("Suspended");
@@ -31,7 +31,7 @@ export function CompanyAccessGate({ children }: { children: React.ReactNode }) {
   const canPay = role === "Company Admin" || role === "Branch Manager" || role === "Finance";
 
   useEffect(() => {
-    if (isPlatformOwner) {
+    if (isSaasSuperAdmin) {
       setBlocked(false);
       setReady(true);
       return;
@@ -111,7 +111,7 @@ export function CompanyAccessGate({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [tenant.id, tenant.slug, isPlatformOwner]);
+  }, [tenant.id, tenant.slug, isSaasSuperAdmin]);
 
   if (!ready) {
     return (
@@ -121,7 +121,7 @@ export function CompanyAccessGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (isPlatformOwner || !blocked || (onBillingPath && canPay)) {
+  if (isSaasSuperAdmin || !blocked || (onBillingPath && canPay)) {
     return <>{children}</>;
   }
 

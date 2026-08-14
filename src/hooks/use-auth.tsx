@@ -30,6 +30,9 @@ type AuthContextValue = {
   isLoading: boolean;
   isAuthenticated: boolean;
   isDemoMode: boolean;
+  /** SaaS owner (MTHUNZI) — logo pattern only. Opens /admin. */
+  isSaasSuperAdmin: boolean;
+  /** @deprecated Use isSaasSuperAdmin — kept for existing imports */
   isPlatformOwner: boolean;
   isCustomer: boolean;
   profile: AuthProfile | null;
@@ -232,11 +235,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (data.session) {
         const loaded = await refreshProfile(data.session);
-        if (!loaded) return { redirect: "/app/onboarding" };
-        if (loaded.isPlatformOwner) {
-          markSuperAdminDevice();
-          return { redirect: "/admin" };
+
+        // SaaS owner uses logo pattern only — never company /login
+        if (loaded?.isPlatformOwner) {
+          await supabase.auth.signOut();
+          clearSuperAdminDevice();
+          setSaasPatternActive(false);
+          setSession(null);
+          setUser(null);
+          setProfile(null);
+          return {
+            redirect: "/",
+            error: "ParcelOS SaaS owner: use the logo tap pattern on the home screen (not company login).",
+          };
         }
+
+        clearSuperAdminDevice();
+        setSaasPatternActive(false);
+
+        if (!loaded) return { redirect: "/app/onboarding" };
         if (loaded.isCustomer) return { redirect: "/portal/history" };
         if (!loaded.companyId) return { redirect: "/app/onboarding" };
         return { redirect: getHomeRouteForRole(loaded.role) };
@@ -290,7 +307,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfile(demoProfile(role));
   }, []);
 
-  /** Secret pattern → open SaaS console immediately (companies, billing, subscriptions). */
+  /** Logo pattern → SaaS console. Clears any courier company session. */
   const enterSuperAdminConsole = useCallback(async () => {
     markSuperAdminDevice();
     setSaasPatternActive(true);
@@ -302,31 +319,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const supabase = getSupabase();
     if (supabase) {
-      const {
-        data: { session: active },
-      } = await supabase.auth.getSession();
-
-      if (active) {
-        const loaded = await loadAuthProfile(active);
-        if (loaded.isPlatformOwner) {
-          setSession(active);
-          setUser(active.user);
-          setProfile(loaded);
-          return;
-        }
-
-        await supabase.auth.signOut();
-        setSession(null);
-        setUser(null);
-      }
+      await supabase.auth.signOut();
+      setSession(null);
+      setUser(null);
     }
 
     applySuperAdminProfile();
   }, [isDemoMode, setDemoRole, applySuperAdminProfile]);
 
-  const isPlatformOwnerEffective =
-    (profile?.isPlatformOwner ?? false) || saasPatternActive;
   const role = profile?.role ?? (saasPatternActive ? "Super Admin" : "Company Admin");
+  const isSaasSuperAdmin = isDemoMode ? role === "Super Admin" : saasPatternActive;
+  const isPlatformOwnerEffective = isSaasSuperAdmin;
   const sessionEmail = session?.user?.email ?? user?.email ?? "";
   const liveName =
     profile?.fullName ||
@@ -341,6 +344,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isLoading,
       isAuthenticated: isDemoMode ? true : Boolean(session) || saasPatternActive,
       isDemoMode,
+      isSaasSuperAdmin,
       isPlatformOwner: isPlatformOwnerEffective,
       isCustomer: profile?.isCustomer ?? false,
       profile,
@@ -379,6 +383,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       profile,
       role,
       saasPatternActive,
+      isSaasSuperAdmin,
       isPlatformOwnerEffective,
       signIn,
       signOut,

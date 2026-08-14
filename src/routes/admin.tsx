@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { AdminSectionContent } from "@/components/admin/admin-sections";
 import { AdminShell, type AdminSection } from "@/components/admin/admin-shell";
 import { AuthGuard, AuthLoadingScreen } from "@/components/auth/auth-guard";
+import { SaasAdminGate } from "@/components/auth/saas-admin-gate";
 import { ClientOnly } from "@/components/client-only";
 import { ProductMeta } from "@/components/logo";
 
@@ -50,11 +51,13 @@ function AdminConsole() {
 
   return (
     <ClientOnly fallback={<AuthLoadingScreen />}>
-      <AuthGuard requirePlatform>
-        <AdminShell section={section}>
-          <AdminSectionContent section={section} company={company} />
-        </AdminShell>
-      </AuthGuard>
+      <SaasAdminGate>
+        <AuthGuard requirePlatform>
+          <AdminShell section={section}>
+            <AdminSectionContent section={section} company={company} />
+          </AdminShell>
+        </AuthGuard>
+      </SaasAdminGate>
     </ClientOnly>
   );
 }
