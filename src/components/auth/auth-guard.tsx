@@ -1,7 +1,7 @@
 import { useEffect, type ReactNode } from "react";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { useAuth } from "@/hooks/use-auth";
-import { canAccessRoute, getHomeRouteForRole } from "@/lib/roles";
+import { canAccessRoute, getHomeRouteForRole, type UserRole } from "@/lib/roles";
 import { isSuperAdminPatternUnlocked } from "@/lib/super-admin-unlock";
 
 export function AuthLoadingScreen() {
@@ -22,6 +22,14 @@ type GuardProps = {
   requireCustomer?: boolean;
 };
 
+function canAccessPlatformConsole(isPlatformOwner: boolean, isDemoMode: boolean, role: UserRole) {
+  return (
+    isPlatformOwner ||
+    isSuperAdminPatternUnlocked() ||
+    (isDemoMode && role === "Super Admin")
+  );
+}
+
 /** Client-side route guard — redirects unauthenticated users and enforces role pages. */
 export function AuthGuard({ children, requirePlatform, requireStaff, requireCustomer }: GuardProps) {
   const { isLoading, isAuthenticated, isPlatformOwner, isCustomer, isDemoMode, role } = useAuth();
@@ -31,21 +39,16 @@ export function AuthGuard({ children, requirePlatform, requireStaff, requireCust
   useEffect(() => {
     if (isLoading) return;
 
-    if (!isAuthenticated && !isDemoMode) {
+    const saasConsole = canAccessPlatformConsole(isPlatformOwner, isDemoMode, role);
+
+    if (!isAuthenticated && !isDemoMode && !saasConsole) {
       void navigate({ to: "/login" });
       return;
     }
 
-    if (requirePlatform) {
-      if (!isPlatformOwner && !(isDemoMode && role === "Super Admin")) {
-        void navigate({ to: getHomeRouteForRole(role) });
-        return;
-      }
-      // Live platform owner: pattern unlock preferred on new devices (still allow if already owner session)
-      if (isPlatformOwner && !isDemoMode && !isSuperAdminPatternUnlocked()) {
-        // Soft gate — send to login with platform hint so they can re-enter pattern on this phone
-        // Don't hard-block if they're already a verified platform owner from DB.
-      }
+    if (requirePlatform && !saasConsole) {
+      void navigate({ to: getHomeRouteForRole(role) });
+      return;
     }
 
     if (requireStaff && isPlatformOwner) {
@@ -81,9 +84,12 @@ export function AuthGuard({ children, requirePlatform, requireStaff, requireCust
   ]);
 
   if (isLoading) return <AuthLoadingScreen />;
-  if (!isAuthenticated && !isDemoMode) return null;
 
-  if (requirePlatform && !isPlatformOwner && !(isDemoMode && role === "Super Admin")) {
+  const saasConsole = canAccessPlatformConsole(isPlatformOwner, isDemoMode, role);
+
+  if (!isAuthenticated && !isDemoMode && !saasConsole) return null;
+
+  if (requirePlatform && !saasConsole) {
     return <AuthLoadingScreen />;
   }
 

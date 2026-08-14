@@ -3,11 +3,9 @@ import { useCallback } from "react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/use-auth";
 import { useSecretAdminUnlock } from "@/hooks/use-secret-admin-unlock";
-import { getSupabase } from "@/lib/supabase/client";
-import { markSuperAdminDevice } from "@/lib/super-admin-unlock";
 import { cn } from "@/lib/utils";
 
-/** Invisible tap target on brand marks — unlocks platform console on any device. */
+/** Logo pattern — SaaS Super Admin only. Opens /admin directly (no login). */
 export function SecretLogoTap({
   children,
   className,
@@ -16,38 +14,17 @@ export function SecretLogoTap({
   className?: string;
 }) {
   const navigate = useNavigate();
-  const { setDemoRole, isDemoMode, isPlatformOwner, isAuthenticated } = useAuth();
+  const { enterSuperAdminConsole } = useAuth();
 
   const unlock = useCallback(() => {
-    markSuperAdminDevice();
-
-    if (isDemoMode) {
-      setDemoRole("Super Admin");
-      toast.success("Platform console unlocked");
-      void navigate({ to: "/admin", search: { section: "overview", company: undefined } });
-      return;
-    }
-
-    if (isAuthenticated && isPlatformOwner) {
-      toast.success("Opening platform console");
-      void navigate({ to: "/admin", search: { section: "overview", company: undefined } });
-      return;
-    }
-
-    const goPlatformLogin = async () => {
-      // Soft sign-out so a courier session on this phone doesn't block owner login
-      if (isAuthenticated) {
-        const supabase = getSupabase();
-        if (supabase) await supabase.auth.signOut();
-      }
-      toast.success("Pattern accepted", {
-        description: "Sign in with your platform owner email & password.",
+    void (async () => {
+      await enterSuperAdminConsole();
+      toast.success("SaaS console opened", {
+        description: "Companies, subscriptions, and billing — MTHUNZI-TECH-LABS only.",
       });
-      void navigate({ to: "/platform" });
-    };
-
-    void goPlatformLogin();
-  }, [isAuthenticated, isDemoMode, isPlatformOwner, navigate, setDemoRole]);
+      void navigate({ to: "/admin", search: { section: "overview", company: undefined } });
+    })();
+  }, [enterSuperAdminConsole, navigate]);
 
   const { onLogoTap } = useSecretAdminUnlock(unlock);
 
@@ -58,7 +35,6 @@ export function SecretLogoTap({
       className={cn(
         "appearance-none border-0 bg-transparent p-0 text-left",
         "touch-manipulation select-none",
-        // Larger invisible hit area on phones
         "min-h-11 min-w-11",
         className,
       )}

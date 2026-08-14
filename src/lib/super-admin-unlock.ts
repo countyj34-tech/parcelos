@@ -1,6 +1,7 @@
 /**
- * Super-admin pattern unlock — works on any phone/desktop browser.
- * Pattern alone does not grant access; you still sign in with the platform owner account.
+ * SaaS Super Admin pattern unlock — MTHUNZI-TECH-LABS only.
+ * Pattern opens the platform console (/admin) directly — no login page.
+ * Company owners use /login instead.
  */
 
 const DEVICE_KEY = "parcelos-super-admin-device";

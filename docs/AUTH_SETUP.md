@@ -49,9 +49,8 @@ Also set in `.env` / Netlify:
 VITE_PLATFORM_OWNER_EMAIL=mthunzilabs@gmail.com
 ```
 
-Sign in: tap the ParcelOS logo pattern → `/platform` → email + password.  
-Works on **any phone or computer** after the pattern + correct credentials.  
-Company staff use `/login` only (not the platform console).
+Sign in: tap the ParcelOS logo pattern → SaaS console opens directly (companies, billing, subscriptions).  
+Company owners sign in at `/login` only.
 
 ### Company admin (Swift Logistics demo)
 

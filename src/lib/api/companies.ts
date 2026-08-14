@@ -3,6 +3,7 @@ import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { mapDbCompanyToPlatform, type DbCompanyRow } from "@/lib/api/mappers";
 import { applyLifecycleOverrides } from "@/lib/company-lifecycle";
 import { getPlatformCompanies } from "@/lib/platform-data";
+import { isSuperAdminPatternUnlocked } from "@/lib/super-admin-unlock";
 
 export type CreateCompanyInput = {
   name: string;
@@ -37,7 +38,21 @@ export async function fetchPlatformCompanies() {
   const supabase = getSupabase();
   if (!supabase) return getPlatformCompanies();
 
-  const { data: { session } } = await supabase.auth.getSession();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  if (!session && isSuperAdminPatternUnlocked()) {
+    const { data, error } = await supabase.rpc("platform_console_list_companies");
+    if (error) {
+      console.warn("[fetchPlatformCompanies] console RPC", error.message);
+      return [];
+    }
+    const rows = (data ?? []) as DbCompanyRow[];
+    if (!rows.length) return [];
+    return applyLifecycleOverrides(rows.map(mapDbCompanyToPlatform));
+  }
+
   if (!session) return [];
 
   const { data, error } = await supabase
@@ -166,6 +181,23 @@ export async function fetchPlatformOverview() {
 
   const supabase = getSupabase();
   if (!supabase) return null;
+
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  if (!session && isSuperAdminPatternUnlocked()) {
+    const { data, error } = await supabase.rpc("platform_console_overview");
+    if (error || !data) return null;
+    return data as {
+      total: number;
+      active: number;
+      trial: number;
+      paused: number;
+      suspended: number;
+      expired: number;
+    };
+  }
 
   const { data: companies } = await supabase
     .from("companies")

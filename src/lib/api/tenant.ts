@@ -1,5 +1,6 @@
 import { getSupabase } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { isSuperAdminPatternUnlocked } from "@/lib/super-admin-unlock";
 import type { TenantBranding } from "@/lib/tenant";
 
 export type PublicCompanyRow = {
@@ -133,7 +134,16 @@ export async function setCompanyLifecycleRemote(
 
   const p_status = UI_TO_DB_STATUS[uiStatus] ?? uiStatus.toLowerCase().replace(/\s+/g, "_");
 
-  const { error } = await supabase.rpc("set_company_lifecycle", {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  const rpcName =
+    !session && isSuperAdminPatternUnlocked()
+      ? "platform_console_set_lifecycle"
+      : "set_company_lifecycle";
+
+  const { error } = await supabase.rpc(rpcName, {
     p_company_id: companyId,
     p_status,
     p_reason: reason ?? null,
