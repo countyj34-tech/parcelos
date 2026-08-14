@@ -10,7 +10,7 @@
 VITE_SUPABASE_URL=https://xxxx.supabase.co
 VITE_SUPABASE_ANON_KEY=eyJ...
 VITE_APP_URL=https://your-site.netlify.app
-VITE_PLATFORM_OWNER_EMAIL=mthunzilabs@gmail.com
+VITE_PLATFORM_OWNER_EMAIL=mthunzilabs2470@gmail.com
 ```
 
 `VITE_APP_URL` must be the **live** HTTPS site customers open (not `localhost`). Restart Vite after changing it.
@@ -34,19 +34,19 @@ supabase db reset
 ### Platform owner (MTHUNZI-TECH-LABS)
 
 1. Supabase Dashboard → **Authentication** → **Users** → **Add user**
-2. Email: `mthunzilabs@gmail.com`
+2. Email: `mthunzilabs2470@gmail.com`
 3. Password: set your private password (never commit it to git)
 4. Turn **Auto Confirm User** ON (so you can sign in immediately)
 5. SQL Editor:
 
 ```sql
-SELECT public.bootstrap_platform_admin('mthunzilabs@gmail.com');
+SELECT public.bootstrap_platform_admin('mthunzilabs2470@gmail.com');
 ```
 
 Also set in `.env` / Netlify:
 
 ```env
-VITE_PLATFORM_OWNER_EMAIL=mthunzilabs@gmail.com
+VITE_PLATFORM_OWNER_EMAIL=mthunzilabs2470@gmail.com
 ```
 
 Sign in: tap the ParcelOS logo pattern → SaaS console opens directly (companies, billing, subscriptions).  

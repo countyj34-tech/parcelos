@@ -166,7 +166,7 @@ export const AUDIT_LOGS = [
 ];
 
 export const PLATFORM_USERS_LIST = [
-  { name: "Mthunzi Tech Labs", email: "mthunzilabs@gmail.com", role: "Super Admin", lastActive: "Just now" },
+  { name: "Mthunzi Tech Labs", email: "mthunzilabs2470@gmail.com", role: "Super Admin", lastActive: "Just now" },
   { name: "Sarah Mwanza", email: "sarah@mthunzi.tech", role: "Support Agent", lastActive: "12 min ago" },
   { name: "James Banda", email: "james@mthunzi.tech", role: "Billing Admin", lastActive: "1 hr ago" },
 ];

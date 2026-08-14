@@ -79,7 +79,7 @@ export function SaasAdminLogin() {
       if (!loaded?.isPlatformOwner) {
         await supabase.auth.signOut();
         toast.error("Not a platform owner account", {
-          description: "Run bootstrap_platform_admin for mthunzilabs@gmail.com in Supabase SQL.",
+          description: "Run bootstrap_platform_admin for mthunzilabs2470@gmail.com in Supabase SQL.",
         });
         return;
       }

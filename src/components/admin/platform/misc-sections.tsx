@@ -978,7 +978,7 @@ export function PlatformSettingsSection() {
         {[
           ["Platform name", "ParcelOS"],
           ["Operator", PLATFORM_OWNER],
-          ["Owner email", "mthunzilabs@gmail.com"],
+          ["Owner email", "mthunzilabs2470@gmail.com"],
           ["Default currency", "ZMW"],
         ].map(([label, val]) => (
           <div key={label} className="space-y-2">
