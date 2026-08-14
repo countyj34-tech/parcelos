@@ -4,6 +4,7 @@ import { Link } from "@tanstack/react-router";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Activity, Building2, HardDrive, Megaphone, MessageSquare, Plus, TrendingUp, Users } from "lucide-react";
 import { AdminPageHeader } from "@/components/admin/admin-shell";
+import { ClientOnly } from "@/components/client-only";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -78,29 +79,31 @@ export function OverviewSection() {
         </div>
       </section>
 
-      <div className="grid gap-5 lg:grid-cols-2">
-        {[
-          { title: "Monthly revenue", data: PLATFORM_CHARTS.revenue, key: "value" as const },
-          { title: "Company growth", data: PLATFORM_CHARTS.companyGrowth, key: "value" as const },
-          { title: "Parcels processed", data: PLATFORM_CHARTS.parcels, key: "value" as const },
-          { title: "Subscription growth", data: PLATFORM_CHARTS.subscriptions, key: "value" as const },
-        ].map((chart) => (
-          <div key={chart.title} className="rounded-xl border border-border bg-card p-5 shadow-card">
-            <h2 className="text-sm font-semibold">{chart.title}</h2>
-            <div className="mt-4 h-48">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chart.data}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
-                  <XAxis dataKey="month" tickLine={false} axisLine={false} fontSize={11} />
-                  <YAxis tickLine={false} axisLine={false} fontSize={11} />
-                  <Tooltip />
-                  <Area type="monotone" dataKey={chart.key} stroke="var(--color-primary)" fill="var(--color-primary)" fillOpacity={0.12} strokeWidth={2} />
-                </AreaChart>
-              </ResponsiveContainer>
+      <ClientOnly>
+        <div className="grid gap-5 lg:grid-cols-2">
+          {[
+            { title: "Monthly revenue", data: PLATFORM_CHARTS.revenue, key: "value" as const },
+            { title: "Company growth", data: PLATFORM_CHARTS.companyGrowth, key: "value" as const },
+            { title: "Parcels processed", data: PLATFORM_CHARTS.parcels, key: "value" as const },
+            { title: "Subscription growth", data: PLATFORM_CHARTS.subscriptions, key: "value" as const },
+          ].map((chart) => (
+            <div key={chart.title} className="rounded-xl border border-border bg-card p-5 shadow-card">
+              <h2 className="text-sm font-semibold">{chart.title}</h2>
+              <div className="mt-4 h-48">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={chart.data}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
+                    <XAxis dataKey="month" tickLine={false} axisLine={false} fontSize={11} />
+                    <YAxis tickLine={false} axisLine={false} fontSize={11} />
+                    <Tooltip />
+                    <Area type="monotone" dataKey={chart.key} stroke="var(--color-primary)" fill="var(--color-primary)" fillOpacity={0.12} strokeWidth={2} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      </ClientOnly>
 
       <div className="grid gap-5 lg:grid-cols-3">
         <FeedCard title="Latest registrations">

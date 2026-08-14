@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { AdminSectionContent } from "@/components/admin/admin-sections";
 import { AdminShell, type AdminSection } from "@/components/admin/admin-shell";
-import { AuthGuard } from "@/components/auth/auth-guard";
+import { AuthGuard, AuthLoadingScreen } from "@/components/auth/auth-guard";
+import { ClientOnly } from "@/components/client-only";
 import { ProductMeta } from "@/components/logo";
 
 const SECTIONS: AdminSection[] = [
@@ -48,10 +49,12 @@ function AdminConsole() {
   const { section, company } = Route.useSearch();
 
   return (
-    <AuthGuard requirePlatform>
-      <AdminShell section={section}>
-        <AdminSectionContent section={section} company={company} />
-      </AdminShell>
-    </AuthGuard>
+    <ClientOnly fallback={<AuthLoadingScreen />}>
+      <AuthGuard requirePlatform>
+        <AdminShell section={section}>
+          <AdminSectionContent section={section} company={company} />
+        </AdminShell>
+      </AuthGuard>
+    </ClientOnly>
   );
 }

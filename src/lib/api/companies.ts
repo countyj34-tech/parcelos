@@ -189,13 +189,20 @@ export async function fetchPlatformOverview() {
   if (!session && isSuperAdminPatternUnlocked()) {
     const { data, error } = await supabase.rpc("platform_console_overview");
     if (error || !data) return null;
-    return data as {
+    const row = data as {
       total: number;
       active: number;
       trial: number;
       paused: number;
       suspended: number;
       expired: number;
+    };
+    return {
+      activeCompanies: row.active ?? 0,
+      trialCompanies: row.trial ?? 0,
+      expiredCompanies: row.expired ?? 0,
+      suspendedCompanies: (row.suspended ?? 0) + (row.paused ?? 0),
+      totalCompanies: row.total ?? 0,
     };
   }
 

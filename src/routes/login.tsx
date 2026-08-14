@@ -23,7 +23,7 @@ const HERO_IMAGE = "/images/hero-courier-ops.jpg";
 
 /**
  * Company staff login only (Company Admin, Receptionist, …).
- * Super admin / platform owner: logo pattern → /platform (separate page).
+ * Super admin / SaaS owner: logo pattern → /admin directly (no login).
  */
 export const Route = createFileRoute("/login")({
   head: () => ({

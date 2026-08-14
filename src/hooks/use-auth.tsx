@@ -134,6 +134,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isDemoMode ? demoProfile(readDemoRole()) : null,
   );
   const [isLoading, setIsLoading] = useState(!isDemoMode);
+  /** Client-only — avoids SSR/localStorage hydration mismatch for SaaS console. */
+  const [saasPatternActive, setSaasPatternActive] = useState(false);
+
+  const applySuperAdminProfile = useCallback(() => {
+    setSaasPatternActive(true);
+    setProfile(demoProfile("Super Admin"));
+  }, []);
 
   const refreshProfile = useCallback(async (nextSession: Session) => {
     try {
@@ -178,9 +185,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      // Pattern unlock = SaaS console on this device (no login screen)
       if (isSuperAdminPatternUnlocked()) {
-        setProfile(demoProfile("Super Admin"));
+        applySuperAdminProfile();
       }
       setIsLoading(false);
     });
@@ -190,12 +196,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } = supabase.auth.onAuthStateChange((_event, s) => {
       setSession(s);
       setUser(s?.user ?? null);
-      if (s) void refreshProfile(s);
-      else setProfile(null);
+      if (s) {
+        void refreshProfile(s);
+        return;
+      }
+      if (isSuperAdminPatternUnlocked()) {
+        applySuperAdminProfile();
+      } else {
+        setSaasPatternActive(false);
+        setProfile(null);
+      }
     });
 
     return () => subscription.unsubscribe();
-  }, [isDemoMode, refreshProfile]);
+  }, [isDemoMode, refreshProfile, applySuperAdminProfile]);
+
+  useEffect(() => {
+    if (isDemoMode) return;
+    if (isSuperAdminPatternUnlocked()) {
+      applySuperAdminProfile();
+    }
+  }, [isDemoMode, applySuperAdminProfile]);
 
   const signIn = useCallback(
     async (email: string, password: string) => {
@@ -227,12 +248,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const signOut = useCallback(async () => {
-    const wasSuperAdmin = isSuperAdminPatternUnlocked();
+    const wasSuperAdmin = saasPatternActive || isSuperAdminPatternUnlocked();
 
     if (isDemoMode) {
       sessionStorage.removeItem(DEMO_ROLE_KEY);
       localStorage.removeItem(DEMO_ROLE_KEY);
       clearSuperAdminDevice();
+      setSaasPatternActive(false);
       setProfile(demoProfile("Company Admin"));
       window.location.href = "/login";
       return;
@@ -241,11 +263,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const supabase = getSupabase();
     if (supabase) await supabase.auth.signOut();
     clearSuperAdminDevice();
+    setSaasPatternActive(false);
     setSession(null);
     setUser(null);
     setProfile(null);
     window.location.href = wasSuperAdmin ? "/" : "/login";
-  }, [isDemoMode]);
+  }, [isDemoMode, saasPatternActive]);
 
   const resetPassword = useCallback(async (email: string) => {
     const supabase = getSupabase();
@@ -270,6 +293,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   /** Secret pattern → open SaaS console immediately (companies, billing, subscriptions). */
   const enterSuperAdminConsole = useCallback(async () => {
     markSuperAdminDevice();
+    setSaasPatternActive(true);
 
     if (isDemoMode) {
       setDemoRole("Super Admin");
@@ -291,19 +315,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        // Courier company / staff session — leave SaaS console on pattern only
         await supabase.auth.signOut();
         setSession(null);
         setUser(null);
       }
     }
 
-    setProfile(demoProfile("Super Admin"));
-  }, [isDemoMode, setDemoRole]);
+    applySuperAdminProfile();
+  }, [isDemoMode, setDemoRole, applySuperAdminProfile]);
 
-  const superAdminViaPattern = isSuperAdminPatternUnlocked();
-  const isPlatformOwnerEffective = (profile?.isPlatformOwner ?? false) || superAdminViaPattern;
-  const role = profile?.role ?? (superAdminViaPattern ? "Super Admin" : "Company Admin");
+  const isPlatformOwnerEffective =
+    (profile?.isPlatformOwner ?? false) || saasPatternActive;
+  const role = profile?.role ?? (saasPatternActive ? "Super Admin" : "Company Admin");
   const sessionEmail = session?.user?.email ?? user?.email ?? "";
   const liveName =
     profile?.fullName ||
@@ -316,13 +339,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () => ({
       session,
       isLoading,
-      isAuthenticated: isDemoMode ? true : Boolean(session) || superAdminViaPattern,
+      isAuthenticated: isDemoMode ? true : Boolean(session) || saasPatternActive,
       isDemoMode,
       isPlatformOwner: isPlatformOwnerEffective,
       isCustomer: profile?.isCustomer ?? false,
       profile,
       role,
-      user: isDemoMode || superAdminViaPattern
+      user: isDemoMode || saasPatternActive
         ? {
             name: profile?.fullName ?? ROLE_USERS[role].name,
             email: profile?.email ?? ROLE_USERS[role].email,
@@ -335,7 +358,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             initials: profile?.initials || initialsFrom(liveName || "U"),
             branch: profile?.branch || "All Branches",
           },
-      company: isDemoMode || superAdminViaPattern
+      company: isDemoMode || saasPatternActive
         ? (profile?.companyName ?? PLATFORM_OWNER)
         : (profile?.companyName ?? "Your company"),
       companyId: profile?.companyId ?? null,
@@ -355,7 +378,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isDemoMode,
       profile,
       role,
-      superAdminViaPattern,
+      saasPatternActive,
       isPlatformOwnerEffective,
       signIn,
       signOut,

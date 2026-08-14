@@ -1,8 +1,7 @@
 import { useEffect, type ReactNode } from "react";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { useAuth } from "@/hooks/use-auth";
-import { canAccessRoute, getHomeRouteForRole, type UserRole } from "@/lib/roles";
-import { isSuperAdminPatternUnlocked } from "@/lib/super-admin-unlock";
+import { canAccessRoute, getHomeRouteForRole } from "@/lib/roles";
 
 export function AuthLoadingScreen() {
   return (
@@ -22,14 +21,6 @@ type GuardProps = {
   requireCustomer?: boolean;
 };
 
-function canAccessPlatformConsole(isPlatformOwner: boolean, isDemoMode: boolean, role: UserRole) {
-  return (
-    isPlatformOwner ||
-    isSuperAdminPatternUnlocked() ||
-    (isDemoMode && role === "Super Admin")
-  );
-}
-
 /** Client-side route guard — redirects unauthenticated users and enforces role pages. */
 export function AuthGuard({ children, requirePlatform, requireStaff, requireCustomer }: GuardProps) {
   const { isLoading, isAuthenticated, isPlatformOwner, isCustomer, isDemoMode, role } = useAuth();
@@ -39,14 +30,12 @@ export function AuthGuard({ children, requirePlatform, requireStaff, requireCust
   useEffect(() => {
     if (isLoading) return;
 
-    const saasConsole = canAccessPlatformConsole(isPlatformOwner, isDemoMode, role);
-
-    if (!isAuthenticated && !isDemoMode && !saasConsole) {
+    if (!isAuthenticated && !isDemoMode && !isPlatformOwner) {
       void navigate({ to: "/login" });
       return;
     }
 
-    if (requirePlatform && !saasConsole) {
+    if (requirePlatform && !isPlatformOwner && !(isDemoMode && role === "Super Admin")) {
       void navigate({ to: getHomeRouteForRole(role) });
       return;
     }
@@ -85,11 +74,9 @@ export function AuthGuard({ children, requirePlatform, requireStaff, requireCust
 
   if (isLoading) return <AuthLoadingScreen />;
 
-  const saasConsole = canAccessPlatformConsole(isPlatformOwner, isDemoMode, role);
+  if (!isAuthenticated && !isDemoMode && !isPlatformOwner) return null;
 
-  if (!isAuthenticated && !isDemoMode && !saasConsole) return null;
-
-  if (requirePlatform && !saasConsole) {
+  if (requirePlatform && !isPlatformOwner && !(isDemoMode && role === "Super Admin")) {
     return <AuthLoadingScreen />;
   }
 
