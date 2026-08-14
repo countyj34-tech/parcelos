@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useSyncExternalStore } from "react";
 import { Link } from "@tanstack/react-router";
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Activity, Building2, HardDrive, Megaphone, MessageSquare, Plus, TrendingUp, Users } from "lucide-react";
 import { AdminPageHeader } from "@/components/admin/admin-shell";
 import { ClientOnly } from "@/components/client-only";
@@ -9,36 +9,50 @@ import { StatCard } from "@/components/dashboard/stat-card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { StatusPill } from "@/components/status-pill";
-import { usePlatformCompanies, usePlatformOverviewStats } from "@/hooks/use-companies";
+import { usePlatformCompanies, usePlatformConsoleBundle, usePlatformOverviewStats } from "@/hooks/use-companies";
 import { fetchPlatformPayments } from "@/lib/api/payments";
 import {
-  PLATFORM_ACTIVITIES,
-  PLATFORM_CHARTS,
-  PLATFORM_OVERVIEW,
-} from "@/lib/platform-data";
-import { TICKETS } from "@/lib/mock-data";
-import { isCompanyAccessBlocked, subscribeCompanyLifecycle } from "@/lib/company-lifecycle";
+  getCompanyLifecycleSnapshot,
+  isCompanyAccessBlocked,
+  subscribeCompanyLifecycle,
+} from "@/lib/company-lifecycle";
+
+function fmtCount(value: number | undefined) {
+  return (value ?? 0).toLocaleString();
+}
 
 export function OverviewSection() {
   const { data: liveStats } = usePlatformOverviewStats();
+  const { data: bundle } = usePlatformConsoleBundle();
   const { data: companies = [] } = usePlatformCompanies();
   const { data: payments = [] } = useQuery({
     queryKey: ["platform", "payments"],
     queryFn: fetchPlatformPayments,
     staleTime: 30_000,
   });
-  useSyncExternalStore(subscribeCompanyLifecycle, () => Date.now(), () => 0);
+  useSyncExternalStore(subscribeCompanyLifecycle, getCompanyLifecycleSnapshot, () => "");
   const demoSuspended = companies.filter((c) => isCompanyAccessBlocked(c.status)).length;
-  const k = liveStats
-    ? { ...PLATFORM_OVERVIEW, ...liveStats, monthlyRevenue: PLATFORM_OVERVIEW.monthlyRevenue }
-    : {
-        ...PLATFORM_OVERVIEW,
-        activeCompanies: companies.filter((c) => c.status === "Active").length,
-        trialCompanies: companies.filter((c) => c.status === "Trial").length,
-        expiredCompanies: companies.filter((c) => c.status === "Expired").length,
-        suspendedCompanies: demoSuspended,
-        totalCompanies: companies.length,
-      };
+  const k = {
+    activeCompanies: liveStats?.activeCompanies ?? companies.filter((c) => c.status === "Active").length,
+    trialCompanies: liveStats?.trialCompanies ?? companies.filter((c) => c.status === "Trial").length,
+    expiredCompanies: liveStats?.expiredCompanies ?? companies.filter((c) => c.status === "Expired").length,
+    suspendedCompanies: liveStats?.suspendedCompanies ?? demoSuspended,
+    monthlyRevenue: liveStats?.monthlyRevenue ?? companies.reduce((sum, c) => sum + (c.mrr || 0), 0),
+    todayParcels: liveStats?.todayParcels ?? companies.reduce((sum, c) => sum + (c.parcelsToday || 0), 0),
+    platformUsers: liveStats?.platformUsers ?? companies.reduce((sum, c) => sum + (c.users || 0), 0),
+    branches: liveStats?.branches ?? companies.reduce((sum, c) => sum + (c.branches || 0), 0),
+    storageUsed: liveStats?.storageUsed ?? "0 GB",
+    smsRemaining: liveStats?.smsRemaining ?? 0,
+    customerTotal: liveStats?.customerTotal ?? 0,
+  };
+  const charts = [
+    { title: "SaaS revenue (ZMW)", data: liveStats?.charts.revenue ?? [], key: "value" as const },
+    { title: "Company growth", data: liveStats?.charts.companyGrowth ?? [], key: "value" as const },
+    { title: "Parcels processed", data: liveStats?.charts.parcels ?? [], key: "value" as const },
+    { title: "SMS sent", data: liveStats?.charts.sms ?? [], key: "value" as const },
+  ];
+  const activity = liveStats?.activity?.length ? liveStats.activity : [];
+  const tickets = bundle?.tickets?.slice(0, 3) ?? [];
 
   return (
     <div className="space-y-8">
@@ -58,16 +72,16 @@ export function OverviewSection() {
         <StatCard label="Trial companies" value={k.trialCompanies} icon={Users} accent="#3B82F6" />
         <StatCard label="Expired" value={k.expiredCompanies} icon={Building2} accent="#EF4444" />
         <StatCard label="Suspended" value={k.suspendedCompanies} icon={Building2} accent="#F59E0B" />
-        <StatCard label="Monthly revenue" value={`$${(k.monthlyRevenue / 1000).toFixed(0)}k`} icon={TrendingUp} accent="#10B981" />
+        <StatCard label="Monthly revenue" value={k.monthlyRevenue > 0 ? `K${Number(k.monthlyRevenue).toLocaleString()}` : "K0"} icon={TrendingUp} accent="#10B981" />
       </div>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-        <StatCard label="Today's parcels" value={k.todayParcels.toLocaleString()} icon={TrendingUp} />
-        <StatCard label="Platform users" value={k.platformUsers.toLocaleString()} icon={Users} />
-        <StatCard label="Branches" value={k.branches} icon={Building2} />
-        <StatCard label="Storage" value={k.storageUsed} icon={HardDrive} />
-        <StatCard label="SMS remaining" value={(k.smsRemaining / 1000).toFixed(0) + "k"} icon={MessageSquare} />
+        <StatCard label="Today's parcels" value={fmtCount(k.todayParcels)} icon={TrendingUp} />
+        <StatCard label="Staff users" value={fmtCount(k.platformUsers)} icon={Users} />
+        <StatCard label="Branches" value={k.branches ?? 0} icon={Building2} />
+        <StatCard label="Storage" value={k.storageUsed ?? "—"} icon={HardDrive} />
+        <StatCard label="SMS remaining" value={fmtCount(k.smsRemaining)} icon={MessageSquare} />
       </div>
-      <StatCard label="API requests (24h)" value={k.apiRequests} icon={Activity} className="max-w-xs" />
+      <StatCard label="End customers" value={fmtCount(k.customerTotal)} icon={Activity} className="max-w-xs" />
 
       <section>
         <h2 className="mb-3 text-sm font-semibold">Quick actions</h2>
@@ -80,29 +94,31 @@ export function OverviewSection() {
       </section>
 
       <ClientOnly>
-        <div className="grid gap-5 lg:grid-cols-2">
-          {[
-            { title: "Monthly revenue", data: PLATFORM_CHARTS.revenue, key: "value" as const },
-            { title: "Company growth", data: PLATFORM_CHARTS.companyGrowth, key: "value" as const },
-            { title: "Parcels processed", data: PLATFORM_CHARTS.parcels, key: "value" as const },
-            { title: "Subscription growth", data: PLATFORM_CHARTS.subscriptions, key: "value" as const },
-          ].map((chart) => (
-            <div key={chart.title} className="rounded-xl border border-border bg-card p-5 shadow-card">
-              <h2 className="text-sm font-semibold">{chart.title}</h2>
-              <div className="mt-4 h-48">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={chart.data}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
-                    <XAxis dataKey="month" tickLine={false} axisLine={false} fontSize={11} />
-                    <YAxis tickLine={false} axisLine={false} fontSize={11} />
-                    <Tooltip />
-                    <Area type="monotone" dataKey={chart.key} stroke="var(--color-primary)" fill="var(--color-primary)" fillOpacity={0.12} strokeWidth={2} />
-                  </AreaChart>
-                </ResponsiveContainer>
+        {() => (
+          <div className="grid gap-5 lg:grid-cols-2">
+            {[
+              { title: "SaaS revenue (ZMW)", data: charts[0]?.data ?? [], key: "value" as const },
+              { title: "Company growth", data: charts[1]?.data ?? [], key: "value" as const },
+              { title: "Parcels processed", data: charts[2]?.data ?? [], key: "value" as const },
+              { title: "SMS sent", data: charts[3]?.data ?? [], key: "value" as const },
+            ].map((chart) => (
+              <div key={chart.title} className="rounded-xl border border-border bg-card p-5 shadow-card">
+                <h2 className="text-sm font-semibold">{chart.title}</h2>
+                <div className="mt-4 h-48">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={chart.data}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
+                      <XAxis dataKey="month" tickLine={false} axisLine={false} fontSize={11} />
+                      <YAxis tickLine={false} axisLine={false} fontSize={11} />
+                      <Tooltip />
+                      <Area type="monotone" dataKey={chart.key} stroke="var(--color-primary)" fill="var(--color-primary)" fillOpacity={0.12} strokeWidth={2} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </ClientOnly>
 
       <div className="grid gap-5 lg:grid-cols-3">
@@ -134,12 +150,16 @@ export function OverviewSection() {
         </FeedCard>
         <FeedCard title="Support tickets">
           <ul className="space-y-3">
-            {TICKETS.slice(0, 3).map((t) => (
-              <li key={t.id} className="text-sm">
-                <p className="font-medium">{t.subject}</p>
-                <p className="text-xs text-muted-foreground">{t.company}</p>
-              </li>
-            ))}
+            {tickets.length === 0 ? (
+              <li className="text-sm text-muted-foreground">No tickets yet</li>
+            ) : (
+              tickets.map((t) => (
+                <li key={t.id} className="text-sm">
+                  <p className="font-medium">{t.subject}</p>
+                  <p className="text-xs text-muted-foreground">{t.company}</p>
+                </li>
+              ))
+            )}
           </ul>
         </FeedCard>
       </div>
@@ -147,12 +167,16 @@ export function OverviewSection() {
       <section>
         <h2 className="mb-3 text-sm font-semibold">Platform activity</h2>
         <ul className="space-y-2">
-          {PLATFORM_ACTIVITIES.map((a) => (
-            <li key={a.text} className="flex justify-between rounded-lg border border-border px-4 py-3 text-sm">
-              <span>{a.text}</span>
-              <span className="text-muted-foreground">{a.when}</span>
-            </li>
-          ))}
+          {activity.length === 0 ? (
+            <li className="rounded-lg border border-border px-4 py-3 text-sm text-muted-foreground">No activity yet</li>
+          ) : (
+            activity.map((a) => (
+              <li key={`${a.when}-${a.text}`} className="flex justify-between rounded-lg border border-border px-4 py-3 text-sm">
+                <span>{a.text}</span>
+                <span className="text-muted-foreground">{a.when}</span>
+              </li>
+            ))
+          )}
         </ul>
       </section>
     </div>

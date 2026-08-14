@@ -51,14 +51,14 @@ const PLANS = [
     code: "starter",
     name: "Starter",
     blurb: "1 branch · core ops",
-    priceCents: 49900,
+    priceCents: 70000,
     highlights: ["Reception & parcels", "Customer portal + QR", "Staff invites"],
   },
   {
     code: "professional",
     name: "Professional",
     blurb: "Multi-branch · dispatch",
-    priceCents: 99900,
+    priceCents: 150000,
     highlights: ["Dispatch & fleet", "Reports", "Priority support"],
   },
 ] as const;

@@ -1,10 +1,11 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { AdminSectionContent } from "@/components/admin/admin-sections";
-import { AdminShell, type AdminSection } from "@/components/admin/admin-shell";
-import { AuthGuard, AuthLoadingScreen } from "@/components/auth/auth-guard";
-import { SaasAdminGate } from "@/components/auth/saas-admin-gate";
+import { lazy, Suspense } from "react";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { AuthLoadingScreen } from "@/components/auth/auth-guard";
 import { ClientOnly } from "@/components/client-only";
 import { ProductMeta } from "@/components/logo";
+import type { AdminSection } from "@/components/admin/admin-shell";
+
+const AdminConsoleClient = lazy(() => import("@/components/admin/admin-console-client"));
 
 const SECTIONS: AdminSection[] = [
   "overview",
@@ -43,21 +44,49 @@ export const Route = createFileRoute("/admin")({
       { name: "description", content: "MTHUNZI-TECH-LABS ParcelOS Platform Console." },
     ],
   }),
+  errorComponent: AdminRouteError,
   component: AdminConsole,
 });
+
+function AdminRouteError({ error, reset }: { error: Error; reset: () => void }) {
+  console.error("[admin route]", error);
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background px-4">
+      <div className="max-w-md text-center">
+        <h1 className="text-xl font-semibold tracking-tight">Platform console unavailable</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          {error.message || "The admin route hit an unexpected error."}
+        </p>
+        <div className="mt-6 flex flex-wrap justify-center gap-2">
+          <button
+            type="button"
+            onClick={() => reset()}
+            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+          >
+            Try again
+          </button>
+          <Link
+            to="/"
+            className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium"
+          >
+            Go home
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function AdminConsole() {
   const { section, company } = Route.useSearch();
 
   return (
     <ClientOnly fallback={<AuthLoadingScreen />}>
-      <SaasAdminGate>
-        <AuthGuard requirePlatform>
-          <AdminShell section={section}>
-            <AdminSectionContent section={section} company={company} />
-          </AdminShell>
-        </AuthGuard>
-      </SaasAdminGate>
+      {() => (
+        <Suspense fallback={<AuthLoadingScreen />}>
+          <AdminConsoleClient section={section} company={company} />
+        </Suspense>
+      )}
     </ClientOnly>
   );
 }

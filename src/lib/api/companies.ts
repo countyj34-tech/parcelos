@@ -3,7 +3,20 @@ import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { mapDbCompanyToPlatform, type DbCompanyRow } from "@/lib/api/mappers";
 import { applyLifecycleOverrides } from "@/lib/company-lifecycle";
 import { getPlatformCompanies } from "@/lib/platform-data";
-import { isSuperAdminPatternUnlocked } from "@/lib/super-admin-unlock";
+import { fetchConsoleOverview } from "@/lib/api/platform-console";
+
+function asRpcArray<T>(data: unknown): T[] {
+  if (Array.isArray(data)) return data as T[];
+  if (typeof data === "string") {
+    try {
+      const parsed = JSON.parse(data) as unknown;
+      return Array.isArray(parsed) ? (parsed as T[]) : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
 
 export type CreateCompanyInput = {
   name: string;
@@ -38,51 +51,16 @@ export async function fetchPlatformCompanies() {
   const supabase = getSupabase();
   if (!supabase) return getPlatformCompanies();
 
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  if (!session && isSuperAdminPatternUnlocked()) {
-    const { data, error } = await supabase.rpc("platform_console_list_companies");
-    if (error) {
-      console.warn("[fetchPlatformCompanies] console RPC", error.message);
-      return [];
-    }
-    const rows = (data ?? []) as DbCompanyRow[];
-    if (!rows.length) return [];
-    return applyLifecycleOverrides(rows.map(mapDbCompanyToPlatform));
-  }
-
-  if (!session) return [];
-
-  const { data, error } = await supabase
-    .from("companies")
-    .select(`
-      id,
-      name,
-      code,
-      slug,
-      country_code,
-      status,
-      subdomain,
-      trial_ends_at,
-      created_at,
-      subscriptions(
-        status,
-        subscription_plans(name)
-      )
-    `)
-    .eq("soft_delete", false)
-    .order("created_at", { ascending: false });
-
+  const { data, error } = await supabase.rpc("platform_console_list_companies");
   if (error) {
-    console.warn("[fetchPlatformCompanies]", error.message);
+    console.warn("[fetchPlatformCompanies] console RPC", error.message);
     return [];
   }
-
-  if (!data?.length) return [];
-
-  return applyLifecycleOverrides((data as DbCompanyRow[]).map(mapDbCompanyToPlatform));
+  const rows = asRpcArray<DbCompanyRow>(data);
+  if (!rows.length) return [];
+  return applyLifecycleOverrides(
+    rows.filter((row) => row && typeof row === "object").map(mapDbCompanyToPlatform),
+  );
 }
 
 export async function createPlatformCompany(input: CreateCompanyInput): Promise<CreateCompanyResult> {
@@ -177,55 +155,5 @@ export async function createPlatformCompany(input: CreateCompanyInput): Promise<
 }
 
 export async function fetchPlatformOverview() {
-  if (!isSupabaseConfigured()) return null;
-
-  const supabase = getSupabase();
-  if (!supabase) return null;
-
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  if (!session && isSuperAdminPatternUnlocked()) {
-    const { data, error } = await supabase.rpc("platform_console_overview");
-    if (error || !data) return null;
-    const row = data as {
-      total: number;
-      active: number;
-      trial: number;
-      paused: number;
-      suspended: number;
-      expired: number;
-    };
-    return {
-      activeCompanies: row.active ?? 0,
-      trialCompanies: row.trial ?? 0,
-      expiredCompanies: row.expired ?? 0,
-      suspendedCompanies: (row.suspended ?? 0) + (row.paused ?? 0),
-      totalCompanies: row.total ?? 0,
-    };
-  }
-
-  const { data: companies } = await supabase
-    .from("companies")
-    .select("status")
-    .eq("soft_delete", false);
-
-  if (!companies) return null;
-
-  const counts = companies.reduce(
-    (acc, c) => {
-      acc[c.status as string] = (acc[c.status as string] ?? 0) + 1;
-      return acc;
-    },
-    {} as Record<string, number>,
-  );
-
-  return {
-    activeCompanies: counts.active ?? 0,
-    trialCompanies: counts.trial ?? 0,
-    expiredCompanies: counts.expired ?? 0,
-    suspendedCompanies: (counts.suspended ?? 0) + (counts.paused ?? 0),
-    totalCompanies: companies.length,
-  };
+  return fetchConsoleOverview();
 }

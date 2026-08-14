@@ -17,6 +17,33 @@ export async function fetchPlatformPayments(): Promise<PlatformPaymentRow[]> {
   const supabase = getSupabase();
   if (!supabase) return [];
 
+  const { data: bundleData, error: bundleError } = await supabase.rpc("platform_console_bundle");
+  if (!bundleError && bundleData) {
+    const bundle =
+      typeof bundleData === "object" && bundleData !== null
+        ? (bundleData as { parcelPayments?: Array<Record<string, unknown>> })
+        : null;
+    const rows = bundle?.parcelPayments;
+    if (Array.isArray(rows)) {
+      return rows.map((row) => ({
+        id: String(row.id),
+        company: String(row.company ?? "—"),
+        amount: money(Math.round(Number(row.amountCents ?? 0) / 100), String(row.currency || "ZMW")),
+        method: String(row.method ?? "").replace(/_/g, " "),
+        status: String(row.status ?? ""),
+        when: row.paidAt
+          ? new Date(String(row.paidAt)).toLocaleString("en-GB", {
+              day: "numeric",
+              month: "short",
+              hour: "2-digit",
+              minute: "2-digit",
+            })
+          : "—",
+        tracking: (row.tracking as string | null) ?? null,
+      }));
+    }
+  }
+
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) return [];
 

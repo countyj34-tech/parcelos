@@ -7,6 +7,8 @@ import {
   type CreateCompanyInput,
 } from "@/lib/api/companies";
 import { findCompanyIdBySlug, setCompanyLifecycleRemote } from "@/lib/api/tenant";
+import { fetchConsoleBundle } from "@/lib/api/platform-console";
+import type { PlatformCompany } from "@/lib/platform-data";
 import {
   setCompanyLifecycleStatus,
   softDeleteCompany,
@@ -28,6 +30,7 @@ export function usePlatformCompanies() {
     return subscribeCompanyLifecycle(() => {
       void queryClient.invalidateQueries({ queryKey: ["platform", "companies"] });
       void queryClient.invalidateQueries({ queryKey: ["platform", "overview"] });
+      void queryClient.invalidateQueries({ queryKey: ["platform", "bundle"] });
     });
   }, [queryClient]);
 
@@ -38,7 +41,17 @@ export function usePlatformOverviewStats() {
   return useQuery({
     queryKey: ["platform", "overview"],
     queryFn: fetchPlatformOverview,
-    staleTime: 60_000,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+}
+
+export function usePlatformConsoleBundle() {
+  return useQuery({
+    queryKey: ["platform", "bundle"],
+    queryFn: fetchConsoleBundle,
+    staleTime: 20_000,
+    refetchInterval: 60_000,
   });
 }
 
@@ -50,13 +63,21 @@ export function useCreateCompany() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["platform", "companies"] });
       void queryClient.invalidateQueries({ queryKey: ["platform", "overview"] });
+      void queryClient.invalidateQueries({ queryKey: ["platform", "bundle"] });
     },
   });
 }
 
-async function applyLifecycle(slug: string, status: LifecycleStatus, reason: string) {
+async function applyLifecycle(
+  slug: string,
+  status: LifecycleStatus,
+  reason: string,
+  companies?: PlatformCompany[],
+) {
   if (isSupabaseConfigured()) {
-    const id = await findCompanyIdBySlug(slug);
+    const cachedId = companies?.find((c) => c.slug === slug)?.id;
+    const id =
+      cachedId && cachedId.length > 20 ? cachedId : await findCompanyIdBySlug(slug);
     if (!id) {
       toast.error("Company not found in database");
       return false;
@@ -81,32 +102,35 @@ export function useCompanyLifecycleActions() {
   const bump = () => {
     void queryClient.invalidateQueries({ queryKey: ["platform", "companies"] });
     void queryClient.invalidateQueries({ queryKey: ["platform", "overview"] });
+    void queryClient.invalidateQueries({ queryKey: ["platform", "bundle"] });
   };
+
+  const companies = () => queryClient.getQueryData<PlatformCompany[]>(["platform", "companies"]);
 
   return {
     pause: async (slug: string) => {
-      const ok = await applyLifecycle(slug, "Paused", "Paused by platform owner");
+      const ok = await applyLifecycle(slug, "Paused", "Paused by platform owner", companies());
       if (ok) bump();
       return ok;
     },
     suspend: async (slug: string) => {
-      const ok = await applyLifecycle(slug, "Suspended", "Suspended for non-payment");
+      const ok = await applyLifecycle(slug, "Suspended", "Suspended for non-payment", companies());
       if (ok) bump();
       return ok;
     },
     disconnect: async (slug: string) => {
-      const ok = await applyLifecycle(slug, "Disconnected", "Disconnected by platform owner");
+      const ok = await applyLifecycle(slug, "Disconnected", "Disconnected by platform owner", companies());
       if (ok) bump();
       return ok;
     },
     reactivate: async (slug: string) => {
-      const ok = await applyLifecycle(slug, "Active", "Reactivated by platform owner");
+      const ok = await applyLifecycle(slug, "Active", "Reactivated by platform owner", companies());
       if (ok) bump();
       return ok;
     },
     remove: async (slug: string) => {
       if (isSupabaseConfigured()) {
-        const ok = await applyLifecycle(slug, "Disconnected", "Deleted by platform owner");
+        const ok = await applyLifecycle(slug, "Disconnected", "Deleted by platform owner", companies());
         if (ok) bump();
         return ok;
       }

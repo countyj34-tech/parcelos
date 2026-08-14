@@ -158,6 +158,11 @@ export async function findCompanyIdBySlug(slug: string): Promise<string | null> 
   const supabase = getSupabase();
   if (!supabase) return null;
 
+  const { data: rpcId, error: rpcError } = await supabase.rpc("platform_console_company_id", {
+    p_slug: slug,
+  });
+  if (!rpcError && rpcId) return rpcId as string;
+
   const { data, error } = await supabase
     .from("companies")
     .select("id")

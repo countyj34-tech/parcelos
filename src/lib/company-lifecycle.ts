@@ -51,6 +51,16 @@ export function subscribeCompanyLifecycle(cb: () => void) {
   };
 }
 
+/** Stable snapshot for useSyncExternalStore — never return Date.now() or a new object. */
+export function getCompanyLifecycleSnapshot(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    return localStorage.getItem(STORAGE_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
 export function getLifecycleOverride(slug: string): Override | null {
   return readAll()[slug] ?? null;
 }

@@ -1,4 +1,3 @@
-import { Link } from "@tanstack/react-router";
 import { Package } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PLATFORM_OWNER, PRODUCT_NAME } from "@/lib/brand";
@@ -14,13 +13,11 @@ export function Logo({
   showPoweredBy?: boolean;
 }) {
   return (
-    <div className={cn("flex items-center gap-2.5", className)}>
-      <SecretLogoTap>
-        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground shadow-card">
-          <Package className="h-[18px] w-[18px]" />
-        </span>
-      </SecretLogoTap>
-      <Link to="/" className="min-w-0">
+    <SecretLogoTap className={cn("flex items-center gap-2.5", className)}>
+      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground shadow-card">
+        <Package className="h-[18px] w-[18px]" />
+      </span>
+      <span className="min-w-0">
         <span
           className={cn(
             "block font-display text-[17px] font-bold tracking-tight",
@@ -34,8 +31,8 @@ export function Logo({
             Powered by {PLATFORM_OWNER}
           </span>
         ) : null}
-      </Link>
-    </div>
+      </span>
+    </SecretLogoTap>
   );
 }
 

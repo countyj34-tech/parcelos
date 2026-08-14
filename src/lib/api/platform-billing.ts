@@ -185,7 +185,8 @@ export async function savePlatformPaymentAccount(input: {
 }): Promise<PlatformPaymentAccount> {
   const supabase = getSupabase();
   if (!supabase) throw new Error("Supabase not configured");
-  const { data, error } = await supabase.rpc("upsert_platform_payment_account", {
+  // Console RPC works with logo-pattern Super Admin (anon); owner-gated upsert does not.
+  const { data, error } = await supabase.rpc("platform_console_upsert_payment_account", {
     p_id: input.id ?? null,
     p_kind: input.kind,
     p_provider: input.provider,
@@ -249,7 +250,7 @@ export async function claimManualSaasPayment(txRef: string, accountId?: string |
 export async function listPendingManualPayments(): Promise<PendingManualPayment[]> {
   const supabase = getSupabase();
   if (!supabase) return [];
-  const { data, error } = await supabase.rpc("list_pending_manual_saas_payments");
+  const { data, error } = await supabase.rpc("platform_console_list_pending_manual_payments");
   if (error) {
     console.warn("[listPendingManualPayments]", error.message);
     return [];
@@ -278,7 +279,9 @@ export async function listPendingManualPayments(): Promise<PendingManualPayment[
 export async function confirmManualSaasPayment(txRef: string) {
   const supabase = getSupabase();
   if (!supabase) throw new Error("Supabase not configured");
-  const { error } = await supabase.rpc("confirm_manual_saas_payment", { p_tx_ref: txRef });
+  const { error } = await supabase.rpc("platform_console_confirm_manual_payment", {
+    p_tx_ref: txRef,
+  });
   if (error) throw new Error(error.message);
 }
 

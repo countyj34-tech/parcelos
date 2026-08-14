@@ -3,17 +3,16 @@ import { ArrowLeft, ExternalLink, LogIn, Pause, Play, ShieldOff, Trash2 } from "
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatusPill } from "@/components/status-pill";
-import { useCompanyLifecycleActions, usePlatformCompanies } from "@/hooks/use-companies";
-import { getCompanyBySlug } from "@/lib/platform-data";
-import { money } from "@/lib/mock-data";
-import { TICKETS } from "@/lib/mock-data";
+import { useCompanyLifecycleActions, usePlatformCompanies, usePlatformConsoleBundle } from "@/hooks/use-companies";
+import { money } from "@/lib/money";
 import { isCompanyAccessBlocked } from "@/lib/company-lifecycle";
 import { toast } from "sonner";
 
 export function CompanyDetailSection({ slug }: { slug: string }) {
   const actions = useCompanyLifecycleActions();
   const { data: companies } = usePlatformCompanies();
-  const company = companies?.find((c) => c.slug === slug) ?? getCompanyBySlug(slug);
+  const { data: bundle } = usePlatformConsoleBundle();
+  const company = companies?.find((c) => c.slug === slug);
 
   if (!company) {
     return (
@@ -215,13 +214,7 @@ export function CompanyDetailSection({ slug }: { slug: string }) {
         </TabsContent>
 
         <TabsContent value="activity" className="mt-6 space-y-2">
-          {["468 parcels processed today", "Admin logged in 2 hrs ago", "Subscription renewed 14 days ago"].map(
-            (a) => (
-              <div key={a} className="rounded-lg border border-border px-4 py-3 text-sm">
-                {a}
-              </div>
-            ),
-          )}
+          <p className="text-sm text-muted-foreground">{company.parcelsToday} parcels processed today</p>
         </TabsContent>
 
         <TabsContent value="parcels" className="mt-6">
@@ -229,16 +222,12 @@ export function CompanyDetailSection({ slug }: { slug: string }) {
           <p className="text-sm text-muted-foreground">Parcels processed today</p>
         </TabsContent>
 
-        <TabsContent value="logins" className="mt-6 space-y-2">
-          {["Admin · Lusaka HQ · 2 hrs ago", "Dispatcher · Ndola · Yesterday"].map((l) => (
-            <div key={l} className="rounded-lg border border-border px-4 py-3 text-sm">
-              {l}
-            </div>
-          ))}
+        <TabsContent value="logins" className="mt-6">
+          <p className="text-sm text-muted-foreground">{company.users} workspace users · last activity is in audit logs</p>
         </TabsContent>
 
         <TabsContent value="tickets" className="mt-6 space-y-3">
-          {TICKETS.filter((t) => t.company === company.name).map((t) => (
+          {(bundle?.tickets ?? []).filter((t) => t.company === company.name).map((t) => (
             <div key={t.id} className="flex justify-between rounded-lg border border-border p-4">
               <div>
                 <p className="font-medium">{t.subject}</p>
@@ -247,7 +236,7 @@ export function CompanyDetailSection({ slug }: { slug: string }) {
               <StatusPill status={t.status} />
             </div>
           ))}
-          {!TICKETS.some((t) => t.company === company.name) ? (
+          {!(bundle?.tickets ?? []).some((t) => t.company === company.name) ? (
             <p className="text-sm text-muted-foreground">No support tickets.</p>
           ) : null}
         </TabsContent>

@@ -7,6 +7,7 @@ import { PLATFORM_OWNER, PRODUCT_NAME } from "@/lib/brand";
 import { clearCustomerPortalMode } from "@/lib/portal-mode";
 import { useAuth } from "@/hooks/use-auth";
 import { getHomeRouteForRole } from "@/lib/roles";
+import { isSuperAdminPatternUnlocked } from "@/lib/super-admin-unlock";
 import { useEffect } from "react";
 
 const HERO_IMAGE = "/images/hero-courier-ops.jpg";
@@ -41,6 +42,10 @@ function CompanyHome() {
   useEffect(() => {
     if (isLoading) return;
     if (isSaasSuperAdmin) {
+      void navigate({ to: "/admin", search: { section: "overview", company: undefined }, replace: true });
+      return;
+    }
+    if (isSuperAdminPatternUnlocked()) {
       void navigate({ to: "/admin", search: { section: "overview", company: undefined }, replace: true });
       return;
     }
