@@ -44,6 +44,19 @@ export const ZM_CITY_OPTIONS = [
   "Kalulushi",
 ] as const;
 
+export function distanceM(
+  a: { lat: number; lng: number },
+  b: { lat: number; lng: number },
+): number {
+  const r = 6371000;
+  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
+  const dLng = ((b.lng - a.lng) * Math.PI) / 180;
+  const s =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((a.lat * Math.PI) / 180) * Math.cos((b.lat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+  return 2 * r * Math.asin(Math.sqrt(s));
+}
+
 export function coordsForCity(city: string | null | undefined): { lat: number; lng: number } | null {
   const raw = city?.trim().toLowerCase() ?? "";
   if (!raw) return null;

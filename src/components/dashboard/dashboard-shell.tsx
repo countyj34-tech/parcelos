@@ -44,8 +44,8 @@ import {
 } from "@/components/ui/select";
 import { useTheme } from "@/hooks/use-theme";
 import { useAuth } from "@/hooks/use-auth";
+import { useWorkspaceBranch } from "@/hooks/use-workspace-branch";
 import { canAccessRoute, DEMO_ROLES, getHomeRouteForRole, getNavForRole, type UserRole } from "@/lib/roles";
-import { useBranchNames } from "@/hooks/use-parcels";
 import { countUnreadNotifications, onNotificationsChanged } from "@/lib/api/notifications";
 import { cn } from "@/lib/utils";
 
@@ -111,16 +111,13 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [unread, setUnread] = useState(0);
-  const { data: liveBranches = [] } = useBranchNames(companyId);
+  const office = useWorkspaceBranch();
   const branchOptions =
-    liveBranches.length > 0
-      ? liveBranches.map((b) => b.name)
+    office.branches.length > 0
+      ? office.branches.map((b) => b.name)
       : user.branch && user.branch !== "All Branches"
         ? [user.branch]
         : [];
-  const [branch, setBranch] = useState(
-    user.branch === "All Branches" ? "All Branches" : user.branch || "All Branches",
-  );
   const [headerQuery, setHeaderQuery] = useState("");
 
   useEffect(() => {
@@ -203,12 +200,15 @@ export function DashboardShell({ children }: { children: ReactNode }) {
               </SheetContent>
             </Sheet>
 
-            <Select value={branch} onValueChange={setBranch}>
+            <Select
+              value={office.isAll ? "all" : office.branchName ?? "all"}
+              onValueChange={office.setBranch}
+            >
               <SelectTrigger className="h-10 w-[200px] rounded-xl text-sm">
-                <SelectValue placeholder="Branch" />
+                <SelectValue placeholder="Working office" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="All Branches">All branches</SelectItem>
+                {office.canSeeAll ? <SelectItem value="all">All branches</SelectItem> : null}
                 {branchOptions.map((b) => (
                   <SelectItem key={b} value={b}>
                     {b}

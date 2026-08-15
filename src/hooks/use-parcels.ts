@@ -20,7 +20,7 @@ export function useParcels(filters: ParcelFilters = {}) {
       ...filters,
       search: deferredSearch || undefined,
     }),
-    [filters.status, filters.branch, filters.payment, deferredSearch],
+    [filters.status, filters.branch, filters.branchId, filters.branchScope, filters.payment, deferredSearch],
   );
 
   return useQuery({

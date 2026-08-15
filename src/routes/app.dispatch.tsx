@@ -27,6 +27,7 @@ import {
 import { useAuth } from "@/hooks/use-auth";
 import { useLiveRun } from "@/hooks/use-live-run";
 import { useBranchNames, useCompanyDispatch, useCompanyStaff, useParcels } from "@/hooks/use-parcels";
+import { useWorkspaceBranch } from "@/hooks/use-workspace-branch";
 import {
   assignDriverToParcels,
   createCompanyVehicle,
@@ -48,11 +49,34 @@ export const Route = createFileRoute("/app/dispatch")({
 function DispatchPage() {
   const { companyId } = useAuth();
   const queryClient = useQueryClient();
+  const office = useWorkspaceBranch();
+  const originOffice = office.isAll ? undefined : office.branchName ?? undefined;
+  const originOfficeId = office.isAll ? undefined : office.branchId ?? undefined;
   const { data, isLoading } = useCompanyDispatch();
-  const { data: pendingParcels = [], refetch } = useParcels({ status: "Received" });
-  const { data: dispatchedParcels = [] } = useParcels({ status: "Dispatched" });
-  const { data: transitParcels = [] } = useParcels({ status: "In Transit" });
-  const { data: arrivedParcels = [] } = useParcels({ status: "Arrived" });
+  const { data: pendingParcels = [], refetch } = useParcels({
+    status: "Received",
+    branch: originOffice,
+    branchId: originOfficeId,
+    branchScope: "origin",
+  });
+  const { data: dispatchedParcels = [] } = useParcels({
+    status: "Dispatched",
+    branch: originOffice,
+    branchId: originOfficeId,
+    branchScope: "origin",
+  });
+  const { data: transitParcels = [] } = useParcels({
+    status: "In Transit",
+    branch: originOffice,
+    branchId: originOfficeId,
+    branchScope: "origin",
+  });
+  const { data: arrivedParcels = [] } = useParcels({
+    status: "Arrived",
+    branch: originOffice,
+    branchId: originOfficeId,
+    branchScope: "origin",
+  });
   const { data: branches = [] } = useBranchNames(companyId);
   const { data: staff = [] } = useCompanyStaff();
   const vehicles = data?.vehicles ?? [];

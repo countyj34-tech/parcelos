@@ -22,8 +22,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { StatusPill } from "@/components/status-pill";
-import { useAuth } from "@/hooks/use-auth";
-import { useBranchNames, useParcels } from "@/hooks/use-parcels";
+import { useParcels } from "@/hooks/use-parcels";
+import { useWorkspaceBranch } from "@/hooks/use-workspace-branch";
+import { downloadExcelCsv } from "@/lib/export-report";
 import { PARCEL_FLOW, type Parcel } from "@/lib/types/parcel";
 import { money } from "@/lib/money";
 
@@ -33,21 +34,38 @@ export const Route = createFileRoute("/app/parcels")({
 });
 
 function ParcelsPage() {
-  const { companyId } = useAuth();
+  const office = useWorkspaceBranch();
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
-  const [branch, setBranch] = useState("all");
   const [payment, setPayment] = useState("all");
   const [selected, setSelected] = useState<string[]>([]);
   const [detail, setDetail] = useState<Parcel | null>(null);
-  const { data: branches = [] } = useBranchNames(companyId);
 
   const { data: rows = [], isLoading, isFetching } = useParcels({
     search: query || undefined,
     status: status === "all" ? undefined : status,
-    branch: branch === "all" ? undefined : branch,
+    branch: office.isAll ? undefined : office.branchName ?? undefined,
+    branchId: office.isAll ? undefined : office.branchId ?? undefined,
+    branchScope: "involved",
     payment: payment === "all" ? undefined : payment,
   });
+
+  const exportRows = () => {
+    const csv = rows.map((p) => ({
+      Tracking: p.tracking,
+      Sender: p.sender,
+      Receiver: p.receiver,
+      From: p.origin,
+      Collect: p.destination,
+      Status: p.status,
+      Payment: p.payment,
+      Amount: p.amount,
+      Created: p.created,
+      Collected: p.collectedAt ?? "",
+    }));
+    const stamp = new Date().toISOString().slice(0, 10);
+    downloadExcelCsv(`parcels-${office.label.replace(/\s+/g, "-")}-${stamp}.csv`, csv);
+  };
 
   return (
     <div>
@@ -56,7 +74,7 @@ function ParcelsPage() {
         description={`${rows.length} parcels${isFetching ? " · syncing…" : ""}`}
         actions={
           <>
-            <Button variant="outline" className="rounded-xl" disabled>
+            <Button variant="outline" className="rounded-xl" disabled={!rows.length} onClick={exportRows}>
               <Download className="mr-2 h-4 w-4" /> Export
             </Button>
             <Button asChild className="rounded-xl">
@@ -92,13 +110,16 @@ function ParcelsPage() {
               ))}
             </SelectContent>
           </Select>
-          <Select value={branch} onValueChange={setBranch}>
+          <Select
+            value={office.isAll ? "all" : office.branchName ?? "all"}
+            onValueChange={office.setBranch}
+          >
             <SelectTrigger className="h-10 w-[180px] rounded-xl">
               <SelectValue placeholder="Branch" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All branches</SelectItem>
-              {branches.map((b) => (
+              {office.canSeeAll ? <SelectItem value="all">All branches</SelectItem> : null}
+              {office.branches.map((b) => (
                 <SelectItem key={b.id} value={b.name}>
                   {b.name}
                 </SelectItem>

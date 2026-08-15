@@ -17,6 +17,9 @@ const PARCEL_SELECT = `
   weight_kg,
   declared_value_cents,
   created_at,
+  collected_at,
+  origin_branch_id,
+  destination_branch_id,
   origin:branches!parcels_origin_branch_id_fkey(name),
   destination:branches!parcels_destination_branch_id_fkey(name),
   category:parcel_categories(name)
@@ -25,6 +28,9 @@ const PARCEL_SELECT = `
 export type ParcelFilters = {
   status?: string;
   branch?: string;
+  branchId?: string;
+  /** origin = drop-off office, destination = collect office, involved = either. */
+  branchScope?: "origin" | "destination" | "involved";
   payment?: string;
   search?: string;
 };
@@ -44,7 +50,6 @@ export async function fetchParcels(filters: ParcelFilters = {}): Promise<Parcel[
     .from("parcels")
     .select(PARCEL_SELECT)
     .eq("soft_delete", false)
-    .order("created_at", { ascending: false })
     .limit(150);
 
   if (filters.search?.trim()) {
@@ -64,6 +69,18 @@ export async function fetchParcels(filters: ParcelFilters = {}): Promise<Parcel[
     if (code) query = query.eq("payment_status", code);
   }
 
+  const scope = filters.branchScope ?? "involved";
+  if (filters.branchId) {
+    if (scope === "origin") query = query.eq("origin_branch_id", filters.branchId);
+    else if (scope === "destination") query = query.eq("destination_branch_id", filters.branchId);
+    else query = query.or(`origin_branch_id.eq.${filters.branchId},destination_branch_id.eq.${filters.branchId}`);
+  }
+
+  query =
+    filters.status === "Collected"
+      ? query.order("collected_at", { ascending: false })
+      : query.order("created_at", { ascending: false });
+
   const { data, error } = await query;
 
   if (error) {
@@ -74,8 +91,12 @@ export async function fetchParcels(filters: ParcelFilters = {}): Promise<Parcel[
   if (!data?.length) return [];
 
   const mapped = (data as unknown as DbParcelRow[]).map(mapDbParcelToUi);
+  if (filters.branchId) return mapped;
   if (!filters.branch || filters.branch === "all") return mapped;
-  return mapped.filter((p) => p.branch === filters.branch || p.origin === filters.branch);
+  const name = filters.branch;
+  if (scope === "origin") return mapped.filter((p) => p.origin === name);
+  if (scope === "destination") return mapped.filter((p) => p.destination === name);
+  return mapped.filter((p) => p.origin === name || p.destination === name);
 }
 
 export async function fetchParcelByTracking(tracking: string): Promise<Parcel | null> {

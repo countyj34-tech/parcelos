@@ -36,6 +36,9 @@ export type Parcel = {
   category: string;
   declaredValue: number;
   created: string;
+  originBranchId?: string;
+  destBranchId?: string;
+  collectedAt?: string | null;
 };
 
 /** Map UI status labels to DB status codes (primary match). */

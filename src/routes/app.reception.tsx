@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { Handshake, Loader2, PackagePlus, Printer, Search, Wallet } from "lucide-react";
+import { Download, FileText, Handshake, Loader2, PackagePlus, Printer, Search, Wallet } from "lucide-react";
 import { PageHeader } from "@/components/dashboard/dashboard-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,6 +17,8 @@ import { StatusPill } from "@/components/status-pill";
 import { useAuth } from "@/hooks/use-auth";
 import { useTenant } from "@/hooks/use-tenant";
 import { useParcels } from "@/hooks/use-parcels";
+import { useWorkspaceBranch } from "@/hooks/use-workspace-branch";
+import { downloadCollectionsExcel, printCollectionsPdf } from "@/lib/export-report";
 import {
   finalizeReceptionPayment,
   searchReceptionParcels,
@@ -53,8 +55,27 @@ function ReceptionPage() {
   const { companyId } = useAuth();
   const { tenant } = useTenant();
   const queryClient = useQueryClient();
-  const { data: readyParcels = [] } = useParcels({ status: "Ready for Collection" });
-  const { data: arrivedParcels = [] } = useParcels({ status: "Arrived" });
+  const office = useWorkspaceBranch();
+  const collectOffice = office.isAll ? undefined : office.branchName ?? undefined;
+  const collectOfficeId = office.isAll ? undefined : office.branchId ?? undefined;
+  const { data: readyParcels = [] } = useParcels({
+    status: "Ready for Collection",
+    branch: collectOffice,
+    branchId: collectOfficeId,
+    branchScope: "destination",
+  });
+  const { data: arrivedParcels = [] } = useParcels({
+    status: "Arrived",
+    branch: collectOffice,
+    branchId: collectOfficeId,
+    branchScope: "destination",
+  });
+  const { data: collectedParcels = [] } = useParcels({
+    status: "Collected",
+    branch: collectOffice,
+    branchId: collectOfficeId,
+    branchScope: "destination",
+  });
 
   useEffect(() => {
     clearReceptionRegisterMode();
@@ -73,7 +94,20 @@ function ReceptionPage() {
   const [done, setDone] = useState(false);
   const [idName, setIdName] = useState("");
 
+  const officeHint = (p: Parcel) => {
+    if (office.isAll || !office.branchName) return null;
+    if (desk === "collect" && p.destination !== office.branchName) {
+      return `Collect this parcel at ${p.destination}, not ${office.branchName}.`;
+    }
+    if (desk === "dropoff" && p.origin !== office.branchName && p.origin !== "—") {
+      return `This drop-off belongs to ${p.origin}. You are working ${office.branchName}.`;
+    }
+    return null;
+  };
+
   const selectParcel = (p: Parcel) => {
+    const hint = officeHint(p);
+    if (hint) toast.error(hint);
     setParcel(p);
     setFee(p.amount > 0 ? String(p.amount) : "");
     setWeight(p.weight.replace(/[^\d.]/g, "") || "");
@@ -184,7 +218,25 @@ function ReceptionPage() {
   const waitingCollect = [...readyParcels, ...arrivedParcels].filter(
     (p, i, all) => p.id && all.findIndex((x) => x.id === p.id) === i,
   );
-  const canCollect = Boolean(parcel && (parcel.status === "Ready for Collection" || parcel.status === "Arrived"));
+  const collectedToday = collectedParcels.filter((p) => {
+    const raw = p.collectedAt || p.created;
+    if (!raw) return true;
+    const t = Date.parse(raw);
+    const now = new Date();
+    if (!Number.isNaN(t)) {
+      return new Date(t).toDateString() === now.toDateString();
+    }
+    const today = now.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+    return raw.includes(today);
+  });
+  const belongsHere =
+    Boolean(parcel) &&
+    (office.isAll || !office.branchName || parcel?.destination === office.branchName);
+  const canCollect = Boolean(
+    parcel &&
+      belongsHere &&
+      (parcel.status === "Ready for Collection" || parcel.status === "Arrived"),
+  );
 
   const onCollect = async () => {
     if (!parcel?.id || !companyId) {
@@ -209,7 +261,7 @@ function ReceptionPage() {
         notifyReceiver: true,
       });
       toast.success(`${parcel.tracking} handed over`);
-      setParcel({ ...parcel, status: "Collected" });
+      setParcel({ ...parcel, status: "Collected", collectedAt: new Date().toISOString() });
       setDone(true);
       setIdName("");
       void queryClient.invalidateQueries({ queryKey: ["parcels"] });
@@ -234,7 +286,11 @@ function ReceptionPage() {
     <div className="space-y-6">
       <PageHeader
         title="Reception"
-        description="Drop-off in seconds. Collection with ID at this counter."
+        description={
+          office.isAll
+            ? "Drop-off in seconds. Collection with ID at this counter."
+            : `${office.label}: drop-off here, collect parcels whose collect office is ${office.label}.`
+        }
       />
 
       <div className="flex flex-wrap gap-2">
@@ -265,7 +321,11 @@ function ReceptionPage() {
         className="rounded-2xl border border-border bg-card p-6 shadow-card"
         onSubmit={(e) => void onSearch(e)}
       >
-        <p className="text-sm font-medium text-muted-foreground">Find parcel by</p>
+        <p className="text-sm font-medium text-muted-foreground">
+          {desk === "collect"
+            ? "Customer shows the tracking code or receipt. Enter it here."
+            : "Find parcel by"}
+        </p>
         <div className="mt-3 flex flex-wrap gap-2">
           {(
             [
@@ -386,14 +446,19 @@ function ReceptionPage() {
             <div className="rounded-2xl border border-border bg-card p-6 shadow-card">
               <p className="text-lg font-semibold">Hand over</p>
               <p className="mt-1 text-sm text-muted-foreground">
-                Check ID against the receiver name, then collect. This updates live tracking and notifies the customer.
+                Confirm the parcel in hand, check ID against the receiver name, then mark Collected. This is saved for Excel / PDF records.
               </p>
               {parcel.status === "Collected" || done ? (
                 <p className="mt-8 rounded-xl bg-emerald-500/10 px-4 py-3 text-sm font-medium text-emerald-800 dark:text-emerald-200">
-                  Parcel collected.
+                  Parcel collected — it is on today’s handover list.
                 </p>
               ) : (
                 <div className="mt-5 space-y-4">
+                  {!belongsHere ? (
+                    <p className="rounded-xl bg-amber-500/10 px-4 py-3 text-sm text-amber-800 dark:text-amber-200">
+                      Collect office is {parcel.destination}. Switch the header to that office, or send the customer there.
+                    </p>
+                  ) : null}
                   <div className="space-y-1.5">
                     <Label>Collector name or NRC / ID</Label>
                     <Input
@@ -403,14 +468,14 @@ function ReceptionPage() {
                       className="h-12 rounded-xl"
                     />
                   </div>
-                  {!canCollect ? (
+                  {belongsHere && !canCollect ? (
                     <p className="text-sm text-amber-700 dark:text-amber-300">
                       Status is {parcel.status}. Collection is for Arrived or Ready parcels.
                     </p>
                   ) : null}
                   <Button className="h-14 w-full rounded-xl text-base" disabled={saving || !canCollect} onClick={() => void onCollect()}>
                     {saving ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Handshake className="mr-2 h-5 w-5" />}
-                    Confirm collection
+                    Mark collected
                   </Button>
                 </div>
               )}
@@ -509,15 +574,67 @@ function ReceptionPage() {
         <div className="rounded-2xl border border-dashed border-border py-20 text-center">
           <Search className="mx-auto h-10 w-10 text-muted-foreground/40" />
           <p className="mt-4 text-lg font-medium">
-            {desk === "collect" ? "Search or tap a waiting parcel" : "Search for a drop-off code"}
+            {desk === "collect" ? "Enter the code, then mark collected" : "Search for a drop-off code"}
           </p>
           <p className="mt-1 text-sm text-muted-foreground">
             {desk === "collect"
-              ? "Ready and arrived parcels show here — collect with ID in one tap."
+              ? office.isAll
+                ? "Ready and arrived parcels show here — collect with ID."
+                : `Only ${office.label} collections. Ready parcels for this office are listed below.`
               : "After register, this desk opens on the new tracking number automatically."}
           </p>
         </div>
       )}
+
+      {desk === "collect" ? (
+        <div className="rounded-2xl border border-border bg-card p-5 shadow-card">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="font-semibold">Collected today — {office.isAll ? "all offices" : office.label}</p>
+              <p className="text-sm text-muted-foreground">{collectedToday.length} handover{collectedToday.length === 1 ? "" : "s"} recorded</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                className="rounded-xl"
+                disabled={!collectedToday.length}
+                onClick={() =>
+                  downloadCollectionsExcel(office.label, collectedToday)
+                }
+              >
+                <Download className="mr-2 h-4 w-4" /> Excel
+              </Button>
+              <Button
+                variant="outline"
+                className="rounded-xl"
+                disabled={!collectedToday.length}
+                onClick={() => printCollectionsPdf(office.label, collectedToday)}
+              >
+                <FileText className="mr-2 h-4 w-4" /> PDF
+              </Button>
+            </div>
+          </div>
+          {collectedToday.length ? (
+            <ul className="mt-4 divide-y divide-border rounded-xl border border-border">
+              {collectedToday.slice(0, 20).map((r) => (
+                <li key={r.id ?? r.tracking} className="flex items-center justify-between gap-3 px-4 py-3 text-sm">
+                  <span>
+                    <span className="font-semibold">{r.tracking}</span>
+                    <span className="ml-2 text-muted-foreground">{r.receiver}</span>
+                  </span>
+                  <span className="text-muted-foreground">
+                    {r.collectedAt
+                      ? new Date(r.collectedAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })
+                      : r.created}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-3 text-sm text-muted-foreground">No collections recorded yet today at this office.</p>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }

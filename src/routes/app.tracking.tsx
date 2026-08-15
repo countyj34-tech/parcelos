@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { Clock, Loader2, MapPin, Navigation, Search } from "lucide-react";
@@ -11,20 +11,36 @@ import { Switch } from "@/components/ui/switch";
 import { StatusPill } from "@/components/status-pill";
 import { useAuth } from "@/hooks/use-auth";
 import { useLiveRun } from "@/hooks/use-live-run";
+import { useParcels } from "@/hooks/use-parcels";
+import { useWorkspaceBranch } from "@/hooks/use-workspace-branch";
 import { fetchStaffTrackingEvents, searchParcelForTracking, TRACKING_STATUSES, updateParcelTrackingStatus } from "@/lib/api/tracking";
 import type { Parcel } from "@/lib/types/parcel";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/app/tracking")({
+  validateSearch: (s: Record<string, unknown>) => {
+    const q = typeof s["q"] === "string" ? s["q"] : undefined;
+    return q ? { q } : {};
+  },
   head: () => ({ meta: [{ title: "Tracking — ParcelOS" }] }),
   component: TrackingAdmin,
 });
 
 function TrackingAdmin() {
+  const { q: qParam } = Route.useSearch();
   const { companyId } = useAuth();
   const queryClient = useQueryClient();
-  const [query, setQuery] = useState("");
+  const office = useWorkspaceBranch();
+  const { data: liveParcels = [] } = useParcels({
+    branch: office.isAll ? undefined : office.branchName ?? undefined,
+    branchId: office.isAll ? undefined : office.branchId ?? undefined,
+    branchScope: "involved",
+  });
+  const onRoad = liveParcels.filter((p) =>
+    ["Received", "Dispatched", "In Transit", "Arrived", "Ready for Collection"].includes(p.status),
+  );
+  const [query, setQuery] = useState(qParam ?? "");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [parcel, setParcel] = useState<Parcel | null>(null);
@@ -64,9 +80,15 @@ function TrackingAdmin() {
     }
   };
 
-  const onUpdate = async () => {
-    if (!parcel?.id || !companyId) {
-      toast.error("Load a parcel first");
+  const onUpdate = async (statusLabel?: string) => {
+    const next = statusLabel ?? active;
+    if (statusLabel) setActive(statusLabel);
+    if (!parcel?.id) {
+      toast.error("Load a parcel first — search the tracking number, then Update.");
+      return;
+    }
+    if (!companyId) {
+      toast.error("Sign in as company staff to save tracking.");
       return;
     }
     setSaving(true);
@@ -74,7 +96,7 @@ function TrackingAdmin() {
       const result = await updateParcelTrackingStatus({
         parcelId: parcel.id,
         companyId,
-        uiStatus: active,
+        uiStatus: next,
         note,
         notifyReceiver,
       });
@@ -89,6 +111,11 @@ function TrackingAdmin() {
     }
   };
 
+  useEffect(() => {
+    if (qParam?.trim()) void load(qParam);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [qParam]);
+
   const timelineHint = useMemo(() => {
     if (!parcel) return "Search a tracking number to edit the live timeline.";
     return `${parcel.origin} → ${parcel.destination}`;
@@ -100,7 +127,7 @@ function TrackingAdmin() {
         title="Tracking"
         description="Real status updates — GPS, city arrival, and office check-in"
         actions={
-          <Button className="rounded-xl" disabled={saving || !parcel} onClick={() => void onUpdate()}>
+          <Button className="rounded-xl" disabled={saving} onClick={() => void onUpdate()}>
             {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
             Save changes
           </Button>
@@ -162,6 +189,31 @@ function TrackingAdmin() {
         </Button>
       </div>
 
+      {!parcel && onRoad.length ? (
+        <div className="rounded-2xl border border-border bg-card p-4">
+          <p className="mb-3 text-sm font-medium">Parcels in motion — tap to update</p>
+          <ul className="space-y-2">
+            {onRoad.slice(0, 10).map((p) => (
+              <li key={p.id ?? p.tracking}>
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between rounded-xl border border-border px-4 py-3 text-left hover:bg-muted/40"
+                  onClick={() => void load(p.tracking)}
+                >
+                  <span>
+                    <span className="font-semibold">{p.tracking}</span>
+                    <span className="mt-0.5 block text-xs text-muted-foreground">
+                      {p.origin} → {p.destination}
+                    </span>
+                  </span>
+                  <StatusPill status={p.status} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       {parcel ? (
         <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-card px-4 py-3 text-sm shadow-card">
           <StatusPill status={parcel.status} />
@@ -194,7 +246,7 @@ function TrackingAdmin() {
                 <button
                   key={s}
                   type="button"
-                  onClick={() => setActive(s)}
+                  onClick={() => void onUpdate(s)}
                   className={cn(
                     "flex w-full items-center gap-3 rounded-xl border px-4 py-3 text-left text-sm transition-colors",
                     active === s ? "border-primary bg-primary/5 font-medium" : "border-border hover:bg-muted/50",
@@ -212,7 +264,7 @@ function TrackingAdmin() {
                 <button
                   key={s}
                   type="button"
-                  onClick={() => setActive(s)}
+                  onClick={() => void onUpdate(s)}
                   className={cn(
                     "flex w-full items-center gap-3 rounded-xl border px-4 py-2.5 text-left text-sm transition-colors",
                     active === s ? "border-primary bg-primary/5 font-medium" : "border-border hover:bg-muted/50",
@@ -260,7 +312,7 @@ function TrackingAdmin() {
               </Label>
               <Switch id="notify-receiver" checked={notifyReceiver} onCheckedChange={setNotifyReceiver} />
             </div>
-            <Button className="w-full rounded-xl" disabled={saving || !parcel} onClick={() => void onUpdate()}>
+            <Button className="w-full rounded-xl" disabled={saving} onClick={() => void onUpdate()}>
               {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               Update status
             </Button>

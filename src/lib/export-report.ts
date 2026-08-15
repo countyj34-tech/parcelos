@@ -49,3 +49,58 @@ export function printReportPdf(title: string, htmlBody: string) {
     </body></html>`);
   w.document.close();
 }
+
+export type CollectionExportRow = {
+  tracking: string;
+  receiver: string;
+  receiverPhone: string;
+  sender: string;
+  origin: string;
+  destination: string;
+  amount: number;
+  collectedAt?: string | null;
+  created: string;
+};
+
+function formatWhen(value: string | null | undefined) {
+  if (!value) return "—";
+  const t = Date.parse(value);
+  if (Number.isNaN(t)) return value;
+  return new Date(t).toLocaleString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function collectionCsvRows(parcels: CollectionExportRow[]) {
+  return parcels.map((p) => ({
+    Tracking: p.tracking,
+    Receiver: p.receiver,
+    "Receiver phone": p.receiverPhone,
+    Sender: p.sender,
+    From: p.origin,
+    "Collect office": p.destination,
+    Fee: p.amount,
+    Collected: formatWhen(p.collectedAt) || p.created,
+  }));
+}
+
+export function downloadCollectionsExcel(office: string, parcels: CollectionExportRow[]) {
+  const stamp = new Date().toISOString().slice(0, 10);
+  downloadExcelCsv(`collections-${office.replace(/\s+/g, "-")}-${stamp}.csv`, collectionCsvRows(parcels));
+}
+
+export function printCollectionsPdf(office: string, parcels: CollectionExportRow[]) {
+  const table = `<table><thead><tr>${["Tracking", "Receiver", "Phone", "From", "Fee", "Collected"]
+    .map((h) => `<th>${h}</th>`)
+    .join("")}</tr></thead><tbody>${parcels
+    .map(
+      (p) =>
+        `<tr><td>${p.tracking}</td><td>${p.receiver}</td><td>${p.receiverPhone}</td><td>${p.origin}</td><td>${p.amount}</td><td>${formatWhen(p.collectedAt) || p.created}</td></tr>`,
+    )
+    .join("")}</tbody></table>`;
+  printReportPdf(`Collections — ${office}`, `<p class="meta">${parcels.length} handover(s)</p>${table}`);
+}

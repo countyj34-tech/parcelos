@@ -43,6 +43,9 @@ export type DbParcelRow = {
   created_at: string;
   origin?: { name: string } | null;
   destination?: { name: string } | null;
+  origin_branch_id?: string;
+  destination_branch_id?: string;
+  collected_at?: string | null;
   category?: { name: string } | null;
 };
 
@@ -56,6 +59,9 @@ export function mapDbParcelToUi(row: DbParcelRow): Parcel {
     receiverPhone: row.receiver_phone,
     origin: row.origin?.name ?? "—",
     destination: row.destination?.name ?? "—",
+    originBranchId: row.origin_branch_id,
+    destBranchId: row.destination_branch_id,
+    collectedAt: row.collected_at ?? null,
     status: STATUS_TO_UI[row.status] ?? "Received",
     payment: PAYMENT_TO_UI[row.payment_status] ?? "Unpaid",
     amount: Math.round(row.shipping_amount_cents / 100),
