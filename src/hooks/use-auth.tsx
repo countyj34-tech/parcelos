@@ -2,7 +2,16 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useSyncExte
 import type { Session, User } from "@supabase/supabase-js";
 import { getSupabase } from "@/lib/supabase/client";
 import { isSupabaseConfigured, getAuthRedirectPath } from "@/lib/supabase/config";
-import { demoProfile, loadAuthProfile, type AuthProfile } from "@/lib/auth/load-profile";
+import {
+  cacheAuthProfile,
+  clearCachedAuthProfile,
+  demoProfile,
+  loadAuthProfile,
+  readCachedAuthProfile,
+  sessionFallbackProfile,
+  type AuthProfile,
+} from "@/lib/auth/load-profile";
+import { isBrowserOffline, withTimeout } from "@/lib/offline";
 import { registerCourierCompany } from "@/lib/api/signup";
 import { type UserRole, ROLE_USERS, getHomeRouteForRole } from "@/lib/roles";
 import { PLATFORM_OWNER } from "@/lib/brand";
@@ -159,14 +168,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const refreshProfile = useCallback(async (nextSession: Session) => {
+    const cached = readCachedAuthProfile(nextSession.user.id);
+    const budgetMs = isBrowserOffline() ? 1200 : 6000;
+
+    if (isBrowserOffline() && cached) {
+      setProfile(cached);
+      return cached;
+    }
+
     try {
-      let loaded = await loadAuthProfile(nextSession);
-      loaded = await ensureCompanyWorkspace(nextSession, loaded);
+      let loaded = await withTimeout(loadAuthProfile(nextSession), budgetMs, "profile-timeout");
+      if (!isBrowserOffline()) {
+        loaded = await withTimeout(ensureCompanyWorkspace(nextSession, loaded), 4000, "workspace-timeout");
+      }
+      cacheAuthProfile(loaded);
       setProfile(loaded);
       return loaded;
     } catch (err) {
       console.error("[AuthProvider] profile load failed:", err);
-      return null;
+      if (cached) {
+        setProfile(cached);
+        return cached;
+      }
+      const fallback = sessionFallbackProfile(nextSession);
+      setProfile(fallback);
+      return fallback;
     }
   }, []);
 
@@ -330,13 +356,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const supabase = getSupabase();
     if (supabase) await supabase.auth.signOut();
+    clearCachedAuthProfile(session?.user?.id);
     clearSuperAdminDevice();
     setSaasPatternActive(false);
     setSession(null);
     setUser(null);
     setProfile(null);
     window.location.href = wasSuperAdmin ? "/" : "/login";
-  }, [isDemoMode, saasPatternActive]);
+  }, [isDemoMode, saasPatternActive, session]);
 
   const resetPassword = useCallback(async (email: string) => {
     const supabase = getSupabase();

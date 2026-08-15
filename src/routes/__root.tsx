@@ -10,8 +10,10 @@ import {
 import { useEffect, type ReactNode } from "react";
 import { Toaster } from "@/components/ui/sonner";
 import { RouteSplashOverlay } from "@/components/splash-screen";
+import { OfflineBanner } from "@/components/offline-banner";
 import { AuthProvider } from "@/hooks/use-auth";
 import { TenantProvider } from "@/hooks/use-tenant";
+import { registerServiceWorker } from "@/lib/pwa";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
@@ -134,10 +136,15 @@ function RootShell({ children }: { children: ReactNode }) {
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
 
+  useEffect(() => {
+    registerServiceWorker();
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <TenantProvider>
+          <OfflineBanner />
           <Outlet />
           <RouteSplashOverlay />
           <Toaster richColors position="top-right" />

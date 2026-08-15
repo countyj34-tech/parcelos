@@ -15,11 +15,14 @@ import { isSupabaseConfigured } from "@/lib/supabase/config";
 import {
   DEMO_TENANT,
   getActiveTenantSlug,
+  readLastLiveTenant,
   resolveTenantFromHost,
+  saveLastLiveTenant,
   saveTenantOverrides,
   setActiveTenantSlug,
   type TenantBranding,
 } from "@/lib/tenant";
+import { isBrowserOffline, withTimeout } from "@/lib/offline";
 
 type TenantContextValue = {
   tenant: TenantBranding;
@@ -38,16 +41,35 @@ function isDemoTenant(t: TenantBranding): boolean {
 
 export function TenantProvider({ children }: { children: ReactNode }) {
   const { companyId, profile, isDemoMode, isLoading: authLoading } = useAuth();
-  const [tenant, setTenant] = useState<TenantBranding>(() => resolveTenantFromHost());
+  const [tenant, setTenant] = useState<TenantBranding>(() => readLastLiveTenant() ?? resolveTenantFromHost());
 
   const refreshTenant = useCallback(async () => {
+    if (isBrowserOffline()) {
+      const last = readLastLiveTenant();
+      if (last) {
+        setActiveTenantSlug(last.slug);
+        setTenant(last);
+      }
+      return;
+    }
+
     // Prefer the signed-in company — never silently fall back to Swift demo.
     if (isSupabaseConfigured() && isCompanyUuid(companyId)) {
-      const byId = await resolveCompanyById(companyId);
-      if (byId) {
-        setActiveTenantSlug(byId.slug);
-        setTenant(byId);
-        return;
+      try {
+        const byId = await withTimeout(resolveCompanyById(companyId), 4000, "tenant-id");
+        if (byId) {
+          setActiveTenantSlug(byId.slug);
+          saveLastLiveTenant(byId);
+          setTenant(byId);
+          return;
+        }
+      } catch {
+        const last = readLastLiveTenant();
+        if (last) {
+          setActiveTenantSlug(last.slug);
+          setTenant(last);
+          return;
+        }
       }
     }
 
@@ -55,11 +77,21 @@ export function TenantProvider({ children }: { children: ReactNode }) {
     const slug = slugFromProfile || getActiveTenantSlug();
 
     if (isSupabaseConfigured() && slug && slug !== DEMO_TENANT.slug) {
-      const remote = await resolveCompanyPublic(slug);
-      if (remote) {
-        setActiveTenantSlug(remote.slug);
-        setTenant(remote);
-        return;
+      try {
+        const remote = await withTimeout(resolveCompanyPublic(slug), 4000, "tenant-slug");
+        if (remote) {
+          setActiveTenantSlug(remote.slug);
+          saveLastLiveTenant(remote);
+          setTenant(remote);
+          return;
+        }
+      } catch {
+        const last = readLastLiveTenant();
+        if (last) {
+          setActiveTenantSlug(last.slug);
+          setTenant(last);
+          return;
+        }
       }
     }
 
@@ -114,6 +146,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
       const remote = await resolveCompanyPublic(key);
       if (remote) {
         setTenant(remote);
+        saveLastLiveTenant(remote);
         return true;
       }
       // Don't revert to demo when slug is known but RPC isn't ready yet

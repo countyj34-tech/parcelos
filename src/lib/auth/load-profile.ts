@@ -301,6 +301,70 @@ export async function loadAuthProfile(session: Session): Promise<AuthProfile> {
   };
 }
 
+const PROFILE_CACHE_PREFIX = "parcelos-profile-cache:";
+
+export function cacheAuthProfile(profile: AuthProfile) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(`${PROFILE_CACHE_PREFIX}${profile.userId}`, JSON.stringify(profile));
+  } catch {
+    /* quota / private mode */
+  }
+}
+
+export function readCachedAuthProfile(userId: string): AuthProfile | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(`${PROFILE_CACHE_PREFIX}${userId}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as AuthProfile;
+    if (!parsed?.userId || parsed.userId !== userId) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export function clearCachedAuthProfile(userId?: string | null) {
+  if (typeof window === "undefined") return;
+  try {
+    if (userId) {
+      localStorage.removeItem(`${PROFILE_CACHE_PREFIX}${userId}`);
+      return;
+    }
+    const keys: string[] = [];
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const key = localStorage.key(i);
+      if (key?.startsWith(PROFILE_CACHE_PREFIX)) keys.push(key);
+    }
+    keys.forEach((key) => localStorage.removeItem(key));
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Minimal profile from the stored session so the app can open when profile APIs are unreachable. */
+export function sessionFallbackProfile(session: Session): AuthProfile {
+  const email = session.user.email ?? "";
+  const meta = session.user.user_metadata ?? {};
+  const metaName = typeof meta.full_name === "string" ? meta.full_name.trim() : "";
+  const fullName = metaName || displayNameFromEmail(email) || "User";
+  return {
+    userId: session.user.id,
+    email,
+    fullName,
+    initials: initials(fullName),
+    role: "Company Admin",
+    roleCode: "company_admin",
+    companyId: typeof meta.company_id === "string" ? meta.company_id : null,
+    companyName: typeof meta.company_name === "string" ? meta.company_name : "Your company",
+    companySlug: typeof meta.company_slug === "string" ? meta.company_slug : null,
+    branch: "All Branches",
+    isPlatformOwner: false,
+    isCustomer: false,
+  };
+}
+
 export function demoProfile(role: UserRole): AuthProfile {
   const demo = ROLE_USERS[role];
   return {

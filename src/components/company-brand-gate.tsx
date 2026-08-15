@@ -4,6 +4,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useTenant } from "@/hooks/use-tenant";
 import { isBrandSetupComplete, isCompanyUuid } from "@/lib/api/company-brand";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { isBrowserOffline } from "@/lib/offline";
 import { SplashScreen } from "@/components/splash-screen";
 
 const ALLOWED_WITHOUT_BRAND = ["/app/onboarding", "/app/settings", "/login"];
@@ -28,7 +29,7 @@ export function CompanyBrandGate({ children }: { children: React.ReactNode }) {
       }
       if (isLoading) return;
 
-      if (isCompanyUuid(companyId)) {
+      if (isCompanyUuid(companyId) && !isBrowserOffline()) {
         await refreshTenant();
       }
 

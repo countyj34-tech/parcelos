@@ -14,8 +14,31 @@ import {
 import { getCompanyBySlug } from "@/lib/platform-data";
 import { isCustomerPortalMode } from "@/lib/portal-mode";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { isBrowserOffline, withTimeout } from "@/lib/offline";
 
 const BILLING_ESCAPE = ["/app/subscription", "/app/support", "/login", "/signup"];
+const ACCESS_CACHE_PREFIX = "parcelos-access:";
+
+function readAccessCache(companyId: string): boolean | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(`${ACCESS_CACHE_PREFIX}${companyId}`);
+    if (raw === "blocked") return true;
+    if (raw === "ok") return false;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function writeAccessCache(companyId: string, blocked: boolean) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(`${ACCESS_CACHE_PREFIX}${companyId}`, blocked ? "blocked" : "ok");
+  } catch {
+    /* ignore */
+  }
+}
 
 /** Blocks company staff app + customer portal when paused/suspended/expired — allows billing escape hatch. */
 export function CompanyAccessGate({ children }: { children: React.ReactNode }) {
@@ -51,51 +74,71 @@ export function CompanyAccessGate({ children }: { children: React.ReactNode }) {
 
     const checkRemote = async () => {
       const looksLikeUuid = /^[0-9a-f-]{36}$/i.test(tenant.id);
-      // Customer share-link portal: only lock when the remote lock check says so
-      const customerPortal = isCustomerPortalMode();
-      if (looksLikeUuid) {
-        if (customerPortal) {
-          const locked = await isCompanyLockedRemote(tenant.id);
-          if (!cancelled) {
-            setBlocked(Boolean(locked));
-            setStatusLabel(locked ? "Suspended" : "Active");
-            setReady(true);
-            return;
-          }
-        }
-        const [locked, billing] = await Promise.all([
-          isCompanyLockedRemote(tenant.id),
-          fetchCompanyBilling(),
-        ]);
+      const lastBlocked = looksLikeUuid ? readAccessCache(tenant.id) : null;
+
+      const allowCachedOrOpen = () => {
         if (!cancelled) {
-          if (billing) {
-            setDaysLeft(billing.daysLeft);
-            setStatusLabel(
-              billing.locked
-                ? billing.companyStatus === "trial"
-                  ? "Expired"
-                  : billing.companyStatus
-                : billing.companyStatus,
-            );
-            setBlocked(billing.locked);
-            setReady(true);
-            return;
-          }
-          if (locked != null) {
-            setBlocked(locked);
-            setStatusLabel(locked ? "Suspended" : "Active");
-            setReady(true);
-            return;
-          }
-        }
-      }
-      // Fail closed for unknown live companies — do not open access when status is unknown
-      if (looksLikeUuid) {
-        if (!cancelled) {
-          setBlocked(true);
-          setStatusLabel("Unavailable");
+          setBlocked(lastBlocked === true);
+          setStatusLabel(lastBlocked === true ? "Unavailable" : "Offline");
           setReady(true);
         }
+      };
+
+      if (isBrowserOffline()) {
+        allowCachedOrOpen();
+        return;
+      }
+
+      try {
+        const customerPortal = isCustomerPortalMode();
+        if (looksLikeUuid) {
+          if (customerPortal) {
+            const locked = await withTimeout(isCompanyLockedRemote(tenant.id), 5000, "lock-timeout");
+            if (!cancelled) {
+              setBlocked(Boolean(locked));
+              setStatusLabel(locked ? "Suspended" : "Active");
+              writeAccessCache(tenant.id, Boolean(locked));
+              setReady(true);
+              return;
+            }
+          }
+          const [locked, billing] = await withTimeout(
+            Promise.all([isCompanyLockedRemote(tenant.id), fetchCompanyBilling()]),
+            5000,
+            "billing-timeout",
+          );
+          if (!cancelled) {
+            if (billing) {
+              setDaysLeft(billing.daysLeft);
+              setStatusLabel(
+                billing.locked
+                  ? billing.companyStatus === "trial"
+                    ? "Expired"
+                    : billing.companyStatus
+                  : billing.companyStatus,
+              );
+              setBlocked(billing.locked);
+              writeAccessCache(tenant.id, billing.locked);
+              setReady(true);
+              return;
+            }
+            if (locked != null) {
+              setBlocked(locked);
+              setStatusLabel(locked ? "Suspended" : "Active");
+              writeAccessCache(tenant.id, locked);
+              setReady(true);
+              return;
+            }
+          }
+        }
+      } catch {
+        allowCachedOrOpen();
+        return;
+      }
+
+      // Network/API unknown: keep last known access. Do not lock staff out when billing is unreachable.
+      if (looksLikeUuid) {
+        allowCachedOrOpen();
         return;
       }
       checkLocal();

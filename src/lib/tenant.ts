@@ -28,6 +28,30 @@ export type TenantBranding = {
 
 const STORAGE_KEY = "parcelos-tenant-overrides";
 const ACTIVE_SLUG_KEY = "parcelos-active-tenant-slug";
+const LAST_LIVE_TENANT_KEY = "parcelos-last-live-tenant";
+
+/** Last company brand fetched while online — used so the desk still opens offline. */
+export function saveLastLiveTenant(tenant: TenantBranding) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(LAST_LIVE_TENANT_KEY, JSON.stringify(tenant));
+  } catch {
+    /* quota / private mode */
+  }
+}
+
+export function readLastLiveTenant(): TenantBranding | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(LAST_LIVE_TENANT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as TenantBranding;
+    if (!parsed?.slug || !parsed?.name) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
 
 /** Demo tenant: Swift Logistics (swiftlogistics.parcelos.africa) */
 export const DEMO_TENANT: TenantBranding = {
