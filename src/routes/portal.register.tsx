@@ -37,7 +37,7 @@ import {
 } from "@/components/ui/dialog";
 import { StatusPill } from "@/components/status-pill";
 import { useTenant } from "@/hooks/use-tenant";
-import { createGuestParcel, listCompanyBranches, listCompanyCategories } from "@/lib/api/parcels";
+import { createGuestParcel, fallbackParcelCategories, listCompanyBranches, listCompanyCategories, resolveParcelCategory } from "@/lib/api/parcels";
 import { registerCustomerAccount } from "@/lib/api/customer-auth";
 import {
   DESTINATION_PROVINCES,
@@ -71,6 +71,8 @@ export const Route = createFileRoute("/portal/register")({
 const STEPS = ["Sender", "Receiver", "Parcel", "Review"];
 
 type Mode = "choose" | "wizard" | "success";
+const OTHER_CATEGORY_VALUE = "__other__";
+
 type CheckoutAs = "guest" | "account" | null;
 
 type FormState = {
@@ -87,6 +89,7 @@ type FormState = {
   description: string;
   declaredValue: string;
   category: string;
+  categoryOther: string;
   weight: string;
   quantity: string;
   instructions: string;
@@ -106,6 +109,7 @@ const empty: FormState = {
   description: "",
   declaredValue: "",
   category: "",
+  categoryOther: "",
   weight: "",
   quantity: "1",
   instructions: "",
@@ -229,10 +233,15 @@ function RegisterParcel() {
   const [trackingNumber, setTrackingNumber] = useState("");
   const [branchOptions, setBranchOptions] = useState<Array<{ id: string; name: string }>>([]);
   const [branchesError, setBranchesError] = useState<string | null>(null);
-  const [categoryOptions, setCategoryOptions] = useState<Array<{ id: string; name: string }>>([]);
+  const [categoryOptions, setCategoryOptions] = useState<Array<{ id: string; name: string }>>(
+    () => fallbackParcelCategories(),
+  );
   const set = (k: keyof FormState) => (v: string) => setForm((f) => ({ ...f, [k]: v }));
+  const isOtherCategory = form.category === OTHER_CATEGORY_VALUE;
   const categoryLabel =
-    categoryOptions.find((c) => c.id === form.category)?.name ?? form.category;
+    isOtherCategory
+      ? form.categoryOther.trim() || "Other"
+      : (categoryOptions.find((c) => c.id === form.category)?.name ?? form.category);
 
   const liveCompany = isSupabaseConfigured() && isCompanyUuid(tenant.id);
 
@@ -274,7 +283,7 @@ function RegisterParcel() {
   useEffect(() => {
     if (!liveCompany) {
       setBranchOptions([]);
-      setCategoryOptions([]);
+      setCategoryOptions(fallbackParcelCategories());
       setBranchesError(
         isSupabaseConfigured()
           ? "Open this courier’s share link again so we can load their branches."
@@ -296,7 +305,7 @@ function RegisterParcel() {
     });
     void listCompanyCategories(tenant.id).then((rows) => {
       if (cancelled) return;
-      setCategoryOptions(rows);
+      setCategoryOptions(rows.length ? rows : fallbackParcelCategories());
     });
     return () => {
       cancelled = true;
@@ -392,6 +401,18 @@ function RegisterParcel() {
     const matched = matchBranchForProvince(branchOptions, destinationLabel);
     const destinationId = matched ?? origin.id;
 
+    const customCategory = isOtherCategory
+      ? form.categoryOther.trim()
+      : form.category.startsWith("name:")
+        ? form.category.slice(5)
+        : "";
+    let categoryId: string | null = null;
+    if (form.category && !isOtherCategory && !form.category.startsWith("name:")) {
+      categoryId = form.category;
+    } else if (customCategory) {
+      categoryId = await resolveParcelCategory(tenant.id, customCategory);
+    }
+
     const created = await createGuestParcel({
       companyId: tenant.id,
       senderName: form.senderName.trim(),
@@ -407,8 +428,17 @@ function RegisterParcel() {
         ? Math.round(Number(form.declaredValue) * 100)
         : 0,
       weightKg: form.weight ? Number(form.weight) : null,
-      ...(form.category ? { categoryId: form.category } : {}),
-      ...(form.instructions.trim() ? { instructions: form.instructions.trim() } : {}),
+      ...(categoryId ? { categoryId } : {}),
+      ...((customCategory && !categoryId) || form.instructions.trim()
+        ? {
+            instructions: [
+              form.instructions.trim(),
+              customCategory && !categoryId ? `Category: ${customCategory}` : "",
+            ]
+              .filter(Boolean)
+              .join("\n"),
+          }
+        : {}),
     });
 
     setSubmitting(false);
@@ -895,9 +925,12 @@ function RegisterParcel() {
                   <Field label="Declared value (ZMW)" value={form.declaredValue} onChange={set("declaredValue")} large />
                   <div className="space-y-1.5">
                     <Label className="md:text-sm">Category</Label>
-                    <Select value={form.category} onValueChange={set("category")}>
+                    <Select
+                      value={form.category || undefined}
+                      onValueChange={(v) => setForm((f) => ({ ...f, category: v, categoryOther: v === OTHER_CATEGORY_VALUE ? f.categoryOther : "" }))}
+                    >
                       <SelectTrigger className="h-11 w-full rounded-xl border-border/80 bg-background transition-all hover:border-[var(--tenant-primary)]/40 focus:ring-[var(--tenant-primary)] sm:h-12 md:h-14 md:text-lg">
-                        <SelectValue placeholder="Select" />
+                        <SelectValue placeholder="Select category" />
                       </SelectTrigger>
                       <SelectContent>
                         {categoryOptions.map((c) => (
@@ -905,8 +938,20 @@ function RegisterParcel() {
                             {c.name}
                           </SelectItem>
                         ))}
+                        <SelectItem value={OTHER_CATEGORY_VALUE}>Other — type your own</SelectItem>
                       </SelectContent>
                     </Select>
+                    {isOtherCategory ? (
+                      <Input
+                        value={form.categoryOther}
+                        onChange={(e) => set("categoryOther")(e.target.value)}
+                        placeholder="Type the category (e.g. Furniture)"
+                        className="h-11 rounded-xl border-border/80 text-base sm:h-12 md:h-14 md:text-lg"
+                      />
+                    ) : null}
+                    <p className="text-xs text-muted-foreground">
+                      Pick one from the list, or choose Other and type it.
+                    </p>
                   </div>
                   <Field label="Quantity" value={form.quantity} onChange={set("quantity")} large />
                   <Field label="Weight kg (optional)" value={form.weight} onChange={set("weight")} large />

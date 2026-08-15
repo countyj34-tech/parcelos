@@ -445,21 +445,56 @@ export async function listCompanyBranches(
   return data as Array<{ id: string; name: string; code: string }>;
 }
 
+export const DEFAULT_PARCEL_CATEGORIES = [
+  "Documents",
+  "Electronics",
+  "Clothing & Textiles",
+  "Auto Spares",
+  "Groceries & Perishables",
+  "Medical Supplies",
+  "Fragile Goods",
+  "General",
+] as const;
+
+export function fallbackParcelCategories(): Array<{ id: string; name: string }> {
+  return DEFAULT_PARCEL_CATEGORIES.map((name) => ({ id: `name:${name}`, name }));
+}
+
+function mergeCategoryLists(
+  remote: Array<{ id: string; name: string }>,
+): Array<{ id: string; name: string }> {
+  const byName = new Map<string, { id: string; name: string }>();
+  for (const row of fallbackParcelCategories()) {
+    byName.set(row.name.toLowerCase(), row);
+  }
+  for (const row of remote) {
+    const name = row.name.trim();
+    if (!name) continue;
+    byName.set(name.toLowerCase(), { id: row.id, name });
+  }
+  return Array.from(byName.values());
+}
+
 export async function listCompanyCategories(
   companyId: string,
 ): Promise<Array<{ id: string; name: string }>> {
-  if (!isSupabaseConfigured()) return [];
+  const fallback = fallbackParcelCategories();
+  if (!isSupabaseConfigured()) return fallback;
   const supabase = getSupabase();
-  if (!supabase) return [];
+  if (!supabase) return fallback;
 
   const { data: rpcRows, error: rpcError } = await supabase.rpc("list_company_categories_public", {
     p_company_id: companyId,
   });
-  if (!rpcError && Array.isArray(rpcRows) && rpcRows.length) {
-    return rpcRows.map((c) => ({
-      id: String((c as { id: string }).id),
-      name: String((c as { name: string }).name),
-    }));
+  if (rpcError) {
+    console.warn("[listCompanyCategories]", rpcError.message);
+  } else if (Array.isArray(rpcRows) && rpcRows.length) {
+    return mergeCategoryLists(
+      rpcRows.map((c) => ({
+        id: String((c as { id: string }).id),
+        name: String((c as { name: string }).name),
+      })),
+    );
   }
 
   const { data, error } = await supabase
@@ -470,8 +505,31 @@ export async function listCompanyCategories(
     .order("sort_order")
     .order("name");
 
-  if (error || !data) return [];
-  return data as Array<{ id: string; name: string }>;
+  if (error) {
+    console.warn("[listCompanyCategories table]", error.message);
+    return fallback;
+  }
+  return mergeCategoryLists((data ?? []) as Array<{ id: string; name: string }>);
+}
+
+export async function resolveParcelCategory(
+  companyId: string,
+  name: string,
+): Promise<string | null> {
+  const trimmed = name.trim();
+  if (!trimmed || !isSupabaseConfigured()) return null;
+  const supabase = getSupabase();
+  if (!supabase) return null;
+
+  const { data, error } = await supabase.rpc("resolve_parcel_category", {
+    p_company_id: companyId,
+    p_name: trimmed,
+  });
+  if (error) {
+    console.warn("[resolveParcelCategory]", error.message);
+    return null;
+  }
+  return typeof data === "string" && data ? data : null;
 }
 
 /** Customer portal history — RLS returns sender/receiver parcels for the signed-in customer. */
