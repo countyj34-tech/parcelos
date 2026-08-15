@@ -1,3 +1,4 @@
+import { coordsForCity } from "@/lib/geo-zm";
 import { getSupabase } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 
@@ -17,6 +18,9 @@ export async function createCompanyBranch(input: {
   code: string;
   city: string;
   phone?: string;
+  address?: string;
+  latitude?: number | null;
+  longitude?: number | null;
   countryCode?: string;
 }) {
   const supabase = await client();
@@ -29,6 +33,10 @@ export async function createCompanyBranch(input: {
   if (!companyId) throw new Error("No company linked to your account");
 
   const code = input.code.trim().toUpperCase() || input.name.slice(0, 3).toUpperCase();
+  const city = input.city.trim() || "Lusaka";
+  const fallback = coordsForCity(city);
+  const lat = input.latitude ?? fallback?.lat ?? null;
+  const lng = input.longitude ?? fallback?.lng ?? null;
 
   const { data, error } = await supabase
     .from("branches")
@@ -36,9 +44,12 @@ export async function createCompanyBranch(input: {
       company_id: companyId,
       name: input.name.trim(),
       code,
-      city: input.city.trim() || "Lusaka",
+      city,
       country_code: input.countryCode ?? "ZM",
       phone: input.phone?.trim() || null,
+      address_line1: input.address?.trim() || null,
+      latitude: lat,
+      longitude: lng,
       is_head_office: false,
       is_active: true,
       created_by: user!.id,
@@ -48,6 +59,36 @@ export async function createCompanyBranch(input: {
 
   if (error) throw new Error(error.message);
   return data;
+}
+
+export async function updateCompanyBranch(input: {
+  id: string;
+  name: string;
+  code: string;
+  city: string;
+  phone?: string;
+  address?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+}) {
+  const supabase = await client();
+  const { error } = await supabase.rpc("update_company_branch", {
+    p_id: input.id,
+    p_name: input.name.trim(),
+    p_code: input.code.trim() || null,
+    p_city: input.city.trim() || null,
+    p_phone: input.phone?.trim() || null,
+    p_address: input.address?.trim() || null,
+    p_latitude: input.latitude ?? null,
+    p_longitude: input.longitude ?? null,
+  });
+  if (error) throw new Error(error.message);
+}
+
+export async function deleteCompanyBranch(branchId: string) {
+  const supabase = await client();
+  const { error } = await supabase.rpc("delete_company_branch", { p_id: branchId });
+  if (error) throw new Error(error.message);
 }
 
 export async function setBranchActive(branchId: string, active: boolean) {
@@ -188,11 +229,12 @@ export async function listCompanyDrivers() {
   const { data, error } = await supabase.rpc("list_company_drivers");
   if (error) throw new Error(error.message);
   return (data ?? []).map((d: Record<string, unknown>) => ({
-    id: d.id as string,
-    name: d.name as string,
-    phone: (d.phone as string | null) ?? null,
-    available: Boolean(d.available),
-    licenseNumber: (d.license_number as string | null) ?? null,
+    id: String(d["id"] ?? ""),
+    name: String(d["name"] ?? "Driver"),
+    phone: (d["phone"] as string | null) ?? null,
+    available: Boolean(d["available"]),
+    licenseNumber: (d["license_number"] as string | null) ?? null,
+    staffId: (d["staff_id"] as string | null) ?? null,
   }));
 }
 
@@ -203,6 +245,23 @@ export async function ensureDriverProfile(staffId: string, license?: string) {
     p_license: license ?? null,
   });
   if (error) throw new Error(error.message);
+  if (!data) throw new Error("Could not create driver profile");
+  return data as string;
+}
+
+export async function createDispatchDriver(input: {
+  name: string;
+  phone?: string;
+  license?: string;
+}) {
+  const supabase = await client();
+  const { data, error } = await supabase.rpc("create_dispatch_driver", {
+    p_name: input.name.trim(),
+    p_phone: input.phone?.trim() || null,
+    p_license: input.license?.trim() || null,
+  });
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("Could not add driver");
   return data as string;
 }
 

@@ -1,4 +1,4 @@
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { ArrowLeft, ExternalLink, LogIn, Pause, Play, ShieldOff, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -9,6 +9,7 @@ import { isCompanyAccessBlocked } from "@/lib/company-lifecycle";
 import { toast } from "sonner";
 
 export function CompanyDetailSection({ slug }: { slug: string }) {
+  const navigate = useNavigate();
   const actions = useCompanyLifecycleActions();
   const { data: companies } = usePlatformCompanies();
   const { data: bundle } = usePlatformConsoleBundle();
@@ -112,13 +113,21 @@ export function CompanyDetailSection({ slug }: { slug: string }) {
             variant="outline"
             className="rounded-lg text-destructive"
             onClick={() => {
-              if (!window.confirm(`Remove ${company.name}? Their portal and workspace will be cut off.`)) return;
+              if (
+                !window.confirm(
+                  `Delete ${company.name}? This removes them from ParcelOS. Their staff login and customer portal will stop working.`,
+                )
+              ) {
+                return;
+              }
               void actions.remove(slug).then((ok) => {
-                if (ok) toast.error(`${company.name} disconnected`);
+                if (!ok) return;
+                toast.success(`${company.name} deleted`);
+                void navigate({ to: "/admin", search: { section: "companies" } });
               });
             }}
           >
-            <Trash2 className="mr-2 h-4 w-4" /> Remove
+            <Trash2 className="mr-2 h-4 w-4" /> Delete company
           </Button>
         </div>
       </div>

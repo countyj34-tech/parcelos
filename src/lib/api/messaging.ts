@@ -2,7 +2,7 @@ import { getSupabase } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { fetchMessagingSettings } from "@/lib/api/company-admin";
 
-export type NotifyEvent = "receive" | "dispatch" | "ready";
+export type NotifyEvent = "receive" | "dispatch" | "ready" | "transit" | "city" | "arrived";
 
 /**
  * Fire-and-forget customer SMS/WhatsApp via Edge Function.
@@ -23,8 +23,12 @@ export async function notifyParcelStakeholders(input: {
     if (!settings) return;
 
     if (input.event === "receive" && !settings.notifyOnReceive) return;
-    if (input.event === "dispatch" && !settings.notifyOnDispatch) return;
-    if (input.event === "ready" && !settings.notifyOnReady) return;
+    if ((input.event === "dispatch" || input.event === "transit" || input.event === "city") && !settings.notifyOnDispatch) {
+      return;
+    }
+    if ((input.event === "ready" || input.event === "arrived") && !settings.notifyOnReady && !settings.notifyOnDispatch) {
+      return;
+    }
 
     const channel =
       input.preferWhatsApp && settings.whatsappEnabled
@@ -41,7 +45,7 @@ export async function notifyParcelStakeholders(input: {
     const { data: sessionData } = await supabase.auth.getSession();
     if (!sessionData.session) return;
 
-    const base = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+    const base = import.meta.env["VITE_SUPABASE_URL"] as string | undefined;
     if (!base) return;
 
     await fetch(`${base}/functions/v1/send-sms`, {
@@ -49,7 +53,7 @@ export async function notifyParcelStakeholders(input: {
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${sessionData.session.access_token}`,
-        apikey: import.meta.env.VITE_SUPABASE_ANON_KEY as string,
+        apikey: import.meta.env["VITE_SUPABASE_ANON_KEY"] as string,
       },
       body: JSON.stringify({
         company_id: input.companyId,

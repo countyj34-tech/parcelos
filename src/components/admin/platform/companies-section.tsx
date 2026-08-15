@@ -214,9 +214,9 @@ function CompanyActions({ slug, name, status }: { slug: string; name: string; st
         <DropdownMenuItem
           className="text-destructive"
           onClick={() => {
-            if (!window.confirm(`Remove ${name}?`)) return;
+            if (!window.confirm(`Delete ${name}? This removes the company from ParcelOS.`)) return;
             void actions.remove(slug).then((ok) => {
-              if (ok) toast.error(`${name} removed`);
+              if (ok) toast.success(`${name} deleted`);
             });
           }}
         >

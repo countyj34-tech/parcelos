@@ -22,9 +22,10 @@ import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/portal/track")({
-  validateSearch: (search: Record<string, unknown>) => ({
-    q: typeof search.q === "string" ? search.q : undefined,
-  }),
+  validateSearch: (search: Record<string, unknown>) => {
+    const q = typeof search["q"] === "string" ? search["q"] : undefined;
+    return q ? { q } : {};
+  },
   head: () => ({
     meta: [{ title: "Track parcel" }],
   }),
@@ -97,20 +98,24 @@ function PortalTrack() {
     : 0;
   const uiStatus = result ? formatParcelStatus(result.status) : "In Transit";
 
-  const runTrack = async (trackingRaw: string) => {
+  const runTrack = async (trackingRaw: string, silent = false) => {
     const tracking = trackingRaw.trim();
     if (!tracking) {
-      toast.error("Enter a tracking number");
+      if (!silent) toast.error("Enter a tracking number");
       return;
     }
 
-    setLoading(true);
-    setSearched(true);
+    if (!silent) {
+      setLoading(true);
+      setSearched(true);
+    }
 
     if (!isSupabaseConfigured()) {
-      setResult(null);
-      toast.error("Tracking is unavailable", { description: "Connect the app to Supabase for live tracking." });
-      setLoading(false);
+      if (!silent) {
+        setResult(null);
+        toast.error("Tracking is unavailable", { description: "Connect the app to Supabase for live tracking." });
+        setLoading(false);
+      }
       return;
     }
 
@@ -131,10 +136,22 @@ function PortalTrack() {
       return;
     }
 
-    setResult(null);
-    toast.message("No parcel found", { description: "Check the reference and try again." });
+    if (!silent) {
+      setResult(null);
+      toast.message("No parcel found", { description: "Check the reference and try again." });
+    }
     setLoading(false);
   };
+
+  useEffect(() => {
+    if (!result?.tracking) return;
+    if (result.status === "collected" || result.status === "cancelled") return;
+    const id = window.setInterval(() => {
+      void runTrack(result.tracking, true);
+    }, 15000);
+    return () => window.clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result?.tracking, result?.status]);
 
   useEffect(() => {
     if (initialQ?.trim()) {

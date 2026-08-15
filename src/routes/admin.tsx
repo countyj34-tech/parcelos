@@ -32,12 +32,13 @@ const SECTIONS: AdminSection[] = [
 ];
 
 export const Route = createFileRoute("/admin")({
-  validateSearch: (search: Record<string, unknown>) => ({
-    section: SECTIONS.includes(search.section as AdminSection)
-      ? (search.section as AdminSection)
-      : "overview",
-    company: typeof search.company === "string" ? search.company : undefined,
-  }),
+  validateSearch: (search: Record<string, unknown>) => {
+    const section = SECTIONS.includes(search["section"] as AdminSection)
+      ? (search["section"] as AdminSection)
+      : "overview";
+    const company = typeof search["company"] === "string" ? search["company"] : undefined;
+    return company ? { section, company } : { section };
+  },
   head: () => ({
     meta: [
       { title: ProductMeta("Platform console") },

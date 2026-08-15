@@ -10,6 +10,9 @@ export type CompanyBranch = {
   code: string;
   city: string | null;
   phone: string | null;
+  address: string | null;
+  latitude: number | null;
+  longitude: number | null;
   isHeadOffice: boolean;
   isActive: boolean;
   parcelsToday: number;
@@ -88,7 +91,7 @@ export async function fetchCompanyBranchesDetailed(): Promise<CompanyBranch[]> {
 
   const { data: branches, error } = await supabase
     .from("branches")
-    .select("id, name, code, city, phone, is_head_office, is_active")
+    .select("id, name, code, city, phone, address_line1, latitude, longitude, is_head_office, is_active")
     .eq("soft_delete", false)
     .order("is_head_office", { ascending: false })
     .order("name");
@@ -146,6 +149,9 @@ export async function fetchCompanyBranchesDetailed(): Promise<CompanyBranch[]> {
     code: b.code as string,
     city: (b.city as string | null) ?? null,
     phone: (b.phone as string | null) ?? null,
+    address: (b.address_line1 as string | null) ?? null,
+    latitude: b.latitude != null ? Number(b.latitude) : null,
+    longitude: b.longitude != null ? Number(b.longitude) : null,
     isHeadOffice: Boolean(b.is_head_office),
     isActive: b.is_active !== false,
     parcelsToday: parcelsToday.get(b.id as string) ?? 0,

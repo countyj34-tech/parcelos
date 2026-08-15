@@ -53,10 +53,7 @@ function CustomerTenantEntry() {
       updateTenant(remote);
       await activateTenant(remote.slug);
       document.title = `${remote.name} — Customer portal`;
-
-      window.setTimeout(() => {
-        if (!cancelled) void navigate({ to: "/portal", replace: true });
-      }, 1200);
+      void navigate({ to: "/portal", replace: true });
     })();
     return () => {
       cancelled = true;

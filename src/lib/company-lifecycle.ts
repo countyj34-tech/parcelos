@@ -103,11 +103,13 @@ export function softDeleteCompany(slug: string) {
 
 export function applyLifecycleOverrides(companies: PlatformCompany[]): PlatformCompany[] {
   const map = readAll();
-  return companies.map((c) => {
-    const o = map[c.slug];
-    if (!o) return c;
-    return { ...c, status: o.status as PlatformCompany["status"] };
-  });
+  return companies
+    .filter((c) => map[c.slug]?.reason !== "Deleted by platform owner")
+    .map((c) => {
+      const o = map[c.slug];
+      if (!o) return c;
+      return { ...c, status: o.status as PlatformCompany["status"] };
+    });
 }
 
 export function lifecycleEventName() {

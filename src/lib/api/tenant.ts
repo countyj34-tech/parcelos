@@ -173,3 +173,15 @@ export async function findCompanyIdBySlug(slug: string): Promise<string | null> 
   if (error || !data) return null;
   return data.id as string;
 }
+
+export async function deleteCompanyRemote(companyId: string): Promise<{ ok: boolean; error?: string }> {
+  if (!isSupabaseConfigured()) return { ok: false, error: "Supabase not configured" };
+  const supabase = getSupabase();
+  if (!supabase) return { ok: false, error: "Supabase not available" };
+
+  const { error } = await supabase.rpc("platform_console_delete_company", {
+    p_company_id: companyId,
+  });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}

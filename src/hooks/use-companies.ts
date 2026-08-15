@@ -6,7 +6,7 @@ import {
   fetchPlatformOverview,
   type CreateCompanyInput,
 } from "@/lib/api/companies";
-import { findCompanyIdBySlug, setCompanyLifecycleRemote } from "@/lib/api/tenant";
+import { findCompanyIdBySlug, deleteCompanyRemote, setCompanyLifecycleRemote } from "@/lib/api/tenant";
 import { fetchConsoleBundle } from "@/lib/api/platform-console";
 import type { PlatformCompany } from "@/lib/platform-data";
 import {
@@ -130,9 +130,21 @@ export function useCompanyLifecycleActions() {
     },
     remove: async (slug: string) => {
       if (isSupabaseConfigured()) {
-        const ok = await applyLifecycle(slug, "Disconnected", "Deleted by platform owner", companies());
-        if (ok) bump();
-        return ok;
+        const cachedId = companies()?.find((c) => c.slug === slug)?.id;
+        const id =
+          cachedId && cachedId.length > 20 ? cachedId : await findCompanyIdBySlug(slug);
+        if (!id) {
+          toast.error("Company not found in database");
+          return false;
+        }
+        const result = await deleteCompanyRemote(id);
+        if (!result.ok) {
+          toast.error(result.error ?? "Could not delete company");
+          return false;
+        }
+        softDeleteCompany(slug);
+        bump();
+        return true;
       }
       softDeleteCompany(slug);
       bump();

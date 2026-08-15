@@ -42,7 +42,7 @@ const ROLE_PATHS: Record<UserRole, readonly string[]> = {
   "Super Admin": ALL_WORKSPACE,
   "Company Admin": [...ALL_WORKSPACE, "/app/subscription", "/app/onboarding"],
   "Branch Manager": [...ALL_WORKSPACE, "/app/onboarding"],
-  Receptionist: ["/app/reception"],
+  Receptionist: ["/app/reception", "/app/parcels", "/app/dispatch", "/app/tracking"],
   Dispatcher: ["/app/dispatch", "/app/tracking", "/app/parcels", "/app/reception"],
   Finance: ["/app/reports", "/app/payments"],
   "Customer Support": ["/app/customers", "/app/parcels", "/app/support"],

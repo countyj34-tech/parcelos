@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { Loader2, Plus, QrCode, ScanLine, Truck, User } from "lucide-react";
+import { Loader2, Navigation, Plus, QrCode, ScanLine, Truck, User } from "lucide-react";
 import { PageHeader } from "@/components/dashboard/dashboard-shell";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { Button } from "@/components/ui/button";
@@ -25,10 +25,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useAuth } from "@/hooks/use-auth";
+import { useLiveRun } from "@/hooks/use-live-run";
 import { useBranchNames, useCompanyDispatch, useCompanyStaff, useParcels } from "@/hooks/use-parcels";
 import {
   assignDriverToParcels,
   createCompanyVehicle,
+  createDispatchDriver,
   dispatchParcels,
   ensureDriverProfile,
   listCompanyDrivers,
@@ -48,6 +50,9 @@ function DispatchPage() {
   const queryClient = useQueryClient();
   const { data, isLoading } = useCompanyDispatch();
   const { data: pendingParcels = [], refetch } = useParcels({ status: "Received" });
+  const { data: dispatchedParcels = [] } = useParcels({ status: "Dispatched" });
+  const { data: transitParcels = [] } = useParcels({ status: "In Transit" });
+  const { data: arrivedParcels = [] } = useParcels({ status: "Arrived" });
   const { data: branches = [] } = useBranchNames(companyId);
   const { data: staff = [] } = useCompanyStaff();
   const vehicles = data?.vehicles ?? [];
@@ -61,10 +66,18 @@ function DispatchPage() {
   const [branchId, setBranchId] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
   const [scan, setScan] = useState("");
-  const [drivers, setDrivers] = useState<Array<{ id: string; name: string; available: boolean }>>([]);
+  const [drivers, setDrivers] = useState<
+    Array<{ id: string; name: string; available: boolean; staffId?: string | null }>
+  >([]);
   const [driverId, setDriverId] = useState("");
   const [vehicleId, setVehicleId] = useState("");
   const [promoteStaffId, setPromoteStaffId] = useState("");
+  const [driverOpen, setDriverOpen] = useState(false);
+  const [driverName, setDriverName] = useState("");
+  const [driverPhone, setDriverPhone] = useState("");
+  const [driverLicense, setDriverLicense] = useState("");
+  const live = useLiveRun(companyId);
+  const onRoad = [...dispatchedParcels, ...transitParcels, ...arrivedParcels];
 
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ["company-dispatch"] });
@@ -112,13 +125,43 @@ function DispatchPage() {
       toast.error("Pick a staff member");
       return;
     }
+    setBusy(true);
     try {
       const id = await ensureDriverProfile(promoteStaffId);
-      toast.success("Driver profile ready");
+      toast.success("Driver added from staff");
       refresh();
       setDriverId(id);
+      setPromoteStaffId("");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not create driver");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onAddDriver = async () => {
+    if (!driverName.trim()) {
+      toast.error("Enter the driver's name");
+      return;
+    }
+    setBusy(true);
+    try {
+      const id = await createDispatchDriver({
+        name: driverName,
+        phone: driverPhone,
+        license: driverLicense,
+      });
+      toast.success("Driver added");
+      setDriverOpen(false);
+      setDriverName("");
+      setDriverPhone("");
+      setDriverLicense("");
+      setDriverId(id);
+      refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not add driver");
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -144,7 +187,7 @@ function DispatchPage() {
         if (!phone) continue;
         void notifyParcelStakeholders({
           companyId,
-          parcelId: p.id,
+          parcelId: p.id ?? null,
           event: "dispatch",
           phone,
           message: `Your parcel ${p.tracking} is on the way. Track status in the customer portal.`,
@@ -179,6 +222,9 @@ function DispatchPage() {
         description="Assign drivers, load vehicles, send parcels"
         actions={
           <div className="flex flex-wrap gap-2">
+            <Button variant="outline" className="rounded-xl" onClick={() => setDriverOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" /> Add driver
+            </Button>
             <Button variant="outline" className="rounded-xl" onClick={() => setOpen(true)}>
               <Plus className="mr-2 h-4 w-4" /> Add vehicle
             </Button>
@@ -188,6 +234,56 @@ function DispatchPage() {
           </div>
         }
       />
+
+      <div className="rounded-2xl border border-border bg-card p-5 shadow-card">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-base font-semibold">Live trip</h2>
+            <p className="mt-1 max-w-xl text-sm text-muted-foreground">
+              Phone stays in the car. Moving → In Transit. Entering the destination city → tracking update. At the office
+              pin → Arrived, then Ready for Collection, with SMS/WhatsApp to the receiver.
+            </p>
+            {onRoad.length ? (
+              <p className="mt-2 text-sm">
+                {onRoad.length} parcel{onRoad.length === 1 ? "" : "s"} on the road
+                {driverId ? " for the selected driver" : " (all vans unless you pick a driver)"}.
+              </p>
+            ) : (
+              <p className="mt-2 text-sm text-muted-foreground">Dispatch parcels first, then start GPS.</p>
+            )}
+          </div>
+          {live.running ? (
+            <Button variant="destructive" className="rounded-xl" disabled={live.busy} onClick={() => void live.stop()}>
+              Stop GPS
+            </Button>
+          ) : (
+            <Button
+              className="rounded-xl"
+              disabled={live.busy || !companyId}
+              onClick={() => void live.start(driverId || null, vehicleId || null)}
+            >
+              {live.busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Navigation className="mr-2 h-4 w-4" />}
+              Start GPS trip
+            </Button>
+          )}
+        </div>
+        {live.running && live.fix ? (
+          <p className="mt-3 text-sm text-muted-foreground">
+            {live.fix.lat.toFixed(5)}, {live.fix.lng.toFixed(5)}
+            {live.fix.accuracy != null ? ` · ±${Math.round(live.fix.accuracy)}m` : ""}
+          </p>
+        ) : null}
+        {live.error ? <p className="mt-2 text-sm text-destructive">{live.error}</p> : null}
+        {live.updates.length ? (
+          <ul className="mt-3 space-y-1 text-sm">
+            {live.updates.slice(0, 6).map((u) => (
+              <li key={`${u.parcel_id}-${u.to_status ?? u.title}`}>
+                <span className="font-medium">{u.tracking}</span> — {u.title}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label="Vehicles" value={vehicles.length} icon={Truck} />
@@ -234,21 +330,26 @@ function DispatchPage() {
           <div className="flex gap-2">
             <Select value={promoteStaffId || "none"} onValueChange={(v) => setPromoteStaffId(v === "none" ? "" : v)}>
               <SelectTrigger className="rounded-xl">
-                <SelectValue />
+                <SelectValue placeholder="Select staff" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">Select staff</SelectItem>
-                {staff.map((s) => (
-                  <SelectItem key={s.id} value={s.id}>
-                    {s.name}
-                  </SelectItem>
-                ))}
+                {staff
+                  .filter((s) => s.status === "Active" && !drivers.some((d) => d.staffId === s.id))
+                  .map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.name}
+                    </SelectItem>
+                  ))}
               </SelectContent>
             </Select>
-            <Button variant="outline" className="shrink-0 rounded-xl" onClick={() => void onPromoteDriver()}>
+            <Button variant="outline" className="shrink-0 rounded-xl" disabled={busy} onClick={() => void onPromoteDriver()}>
               Add
             </Button>
           </div>
+          <Button type="button" variant="secondary" className="mt-2 w-full rounded-xl" onClick={() => setDriverOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" /> New driver (name &amp; phone)
+          </Button>
         </div>
       </div>
 
@@ -349,6 +450,34 @@ function DispatchPage() {
           <DialogFooter>
             <Button className="rounded-xl" disabled={busy} onClick={() => void onAddVehicle()}>
               Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={driverOpen} onOpenChange={setDriverOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add driver</DialogTitle>
+            <DialogDescription>Name and phone are enough — they do not need a login.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3">
+            <div className="space-y-1.5">
+              <Label>Full name</Label>
+              <Input className="rounded-xl" value={driverName} onChange={(e) => setDriverName(e.target.value)} placeholder="Patrick Musonda" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Phone</Label>
+              <Input className="rounded-xl" value={driverPhone} onChange={(e) => setDriverPhone(e.target.value)} placeholder="097…" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>License (optional)</Label>
+              <Input className="rounded-xl" value={driverLicense} onChange={(e) => setDriverLicense(e.target.value)} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button className="rounded-xl" disabled={busy} onClick={() => void onAddDriver()}>
+              Save driver
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -121,6 +121,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   const [branch, setBranch] = useState(
     user.branch === "All Branches" ? "All Branches" : user.branch || "All Branches",
   );
+  const [headerQuery, setHeaderQuery] = useState("");
 
   useEffect(() => {
     if (isDemoMode) {
@@ -216,9 +217,28 @@ export function DashboardShell({ children }: { children: ReactNode }) {
               </SelectContent>
             </Select>
 
-            <div className="relative hidden min-w-0 flex-1 md:block md:max-w-md">
-              <Input placeholder="Search parcels, customers…" className="h-10 rounded-xl bg-muted/50" />
-            </div>
+            <form
+              className="relative hidden min-w-0 flex-1 md:block md:max-w-md"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const q = headerQuery.trim();
+                if (!q) return;
+                void navigate({
+                  to: "/app/reception",
+                  search: {
+                    q,
+                    desk: "dropoff",
+                  },
+                });
+              }}
+            >
+              <Input
+                value={headerQuery}
+                onChange={(e) => setHeaderQuery(e.target.value)}
+                placeholder="Tracking or phone — Enter"
+                className="h-10 rounded-xl bg-muted/50"
+              />
+            </form>
 
             <div className="ml-auto flex items-center gap-1">
               {isDemoMode ? (

@@ -42,6 +42,7 @@ import { registerCustomerAccount } from "@/lib/api/customer-auth";
 import {
   DESTINATION_PROVINCES,
   OTHER_PROVINCE_VALUE,
+  branchesForProvince,
   matchBranchForProvince,
 } from "@/lib/provinces";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
@@ -84,6 +85,8 @@ type FormState = {
   receiverPhone: string;
   destination: string;
   destinationOther: string;
+  originBranchId: string;
+  destBranchId: string;
   password: string;
   passwordConfirm: string;
   description: string;
@@ -104,6 +107,8 @@ const empty: FormState = {
   receiverPhone: "",
   destination: "",
   destinationOther: "",
+  originBranchId: "",
+  destBranchId: "",
   password: "",
   passwordConfirm: "",
   description: "",
@@ -231,7 +236,7 @@ function RegisterParcel() {
   const [attempted, setAttempted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [trackingNumber, setTrackingNumber] = useState("");
-  const [branchOptions, setBranchOptions] = useState<Array<{ id: string; name: string }>>([]);
+  const [branchOptions, setBranchOptions] = useState<Array<{ id: string; name: string; city?: string | null }>>([]);
   const [branchesError, setBranchesError] = useState<string | null>(null);
   const [categoryOptions, setCategoryOptions] = useState<Array<{ id: string; name: string }>>(
     () => fallbackParcelCategories(),
@@ -254,10 +259,13 @@ function RegisterParcel() {
     if (mode !== "success" || !fromReception) return;
     const t = window.setTimeout(() => {
       clearReceptionRegisterMode();
-      void navigate({ to: "/app/reception" });
-    }, 2200);
+      void navigate({
+        to: "/app/reception",
+        search: trackingNumber ? { q: trackingNumber, desk: "dropoff" } : { desk: "dropoff" },
+      });
+    }, 900);
     return () => window.clearTimeout(t);
-  }, [fromReception, mode, navigate]);
+  }, [fromReception, mode, navigate, trackingNumber]);
 
   // Shared-link customers: make sure we have the real company UUID (not demo tenant)
   useEffect(() => {
@@ -277,7 +285,10 @@ function RegisterParcel() {
 
   const exitToReception = () => {
     clearReceptionRegisterMode();
-    void navigate({ to: "/app/reception" });
+    void navigate({
+      to: "/app/reception",
+      search: trackingNumber ? { q: trackingNumber, desk: "dropoff" } : { desk: "dropoff" },
+    });
   };
 
   useEffect(() => {
@@ -296,8 +307,12 @@ function RegisterParcel() {
     void listCompanyBranches(tenant.id).then((rows) => {
       if (cancelled) return;
       if (rows.length) {
-        setBranchOptions(rows.map((b) => ({ id: b.id, name: b.name })));
+        setBranchOptions(rows.map((b) => ({ id: b.id, name: b.name, city: b.city })));
         setBranchesError(null);
+        setForm((f) => ({
+          ...f,
+          originBranchId: f.originBranchId || rows[0]!.id,
+        }));
       } else {
         setBranchOptions([]);
         setBranchesError("This courier has no active branches yet. Ask them to add a branch in settings.");
@@ -317,13 +332,17 @@ function RegisterParcel() {
       ? form.destinationOther.trim()
       : form.destination.trim();
   const destinationOk = Boolean(destinationLabel);
+  const destBranchChoices = destinationLabel
+    ? branchesForProvince(branchOptions, destinationLabel)
+    : branchOptions;
+  const destinationOfficeOk = Boolean(form.destBranchId || destBranchChoices.length === 1);
 
   const senderOk = Boolean(form.senderName.trim() && form.senderPhone.trim());
   const accountOk =
     checkoutAs !== "account" ||
     (form.password.length >= 6 && form.password === form.passwordConfirm);
   const receiverOk = Boolean(
-    form.receiverName.trim() && form.receiverPhone.trim() && destinationOk,
+    form.receiverName.trim() && form.receiverPhone.trim() && destinationOk && destinationOfficeOk,
   );
   const parcelOk = Boolean(form.description.trim());
 
@@ -341,7 +360,7 @@ function RegisterParcel() {
         if (!senderOk) toast.error("Enter sender name and phone to continue");
         else if (form.password.length < 6) toast.error("Password must be at least 6 characters");
         else toast.error("Passwords do not match");
-      } else if (step === 1) toast.error("Receiver name, phone and destination province are required");
+      } else if (step === 1) toast.error("Receiver, province, and collection office are required");
       else if (step === 2) toast.error("Add a parcel description to continue");
       return;
     }
@@ -397,9 +416,20 @@ function RegisterParcel() {
       setSubmitting(false);
       return;
     }
-    const origin = branchOptions[0];
-    const matched = matchBranchForProvince(branchOptions, destinationLabel);
-    const destinationId = matched ?? origin.id;
+    const origin =
+      branchOptions.find((b) => b.id === form.originBranchId) ?? branchOptions[0];
+    if (!origin) {
+      toast.error("Choose a drop-off office");
+      setSubmitting(false);
+      return;
+    }
+    const destChoices = destBranchChoices.length ? destBranchChoices : branchOptions;
+    const dest =
+      destChoices.find((b) => b.id === form.destBranchId) ??
+      destChoices.find((b) => b.id === matchBranchForProvince(destChoices, destinationLabel)) ??
+      destChoices[0] ??
+      origin;
+    const destinationId = dest.id;
 
     const customCategory = isOtherCategory
       ? form.categoryOther.trim()
@@ -429,16 +459,14 @@ function RegisterParcel() {
         : 0,
       weightKg: form.weight ? Number(form.weight) : null,
       ...(categoryId ? { categoryId } : {}),
-      ...((customCategory && !categoryId) || form.instructions.trim()
-        ? {
-            instructions: [
-              form.instructions.trim(),
-              customCategory && !categoryId ? `Category: ${customCategory}` : "",
-            ]
-              .filter(Boolean)
-              .join("\n"),
-          }
-        : {}),
+      instructions: [
+        form.instructions.trim(),
+        customCategory && !categoryId ? `Category: ${customCategory}` : "",
+        form.senderNrc.trim() ? `Sender NRC: ${form.senderNrc.trim()}` : "",
+        form.quantity.trim() && form.quantity !== "1" ? `Quantity: ${form.quantity.trim()}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n") || null,
     });
 
     setSubmitting(false);
@@ -615,11 +643,16 @@ function RegisterParcel() {
                   Staff will weigh your parcel at the counter and confirm the final amount using the company rate chart.
                 </p>
               </div>
-              <div className="mx-auto grid h-32 w-32 place-items-center rounded-2xl border border-dashed border-border bg-muted/40">
-                <div className="text-center text-muted-foreground">
-                  <QrCode className="mx-auto h-12 w-12" />
-                  <p className="mt-2 text-xs">QR code</p>
-                </div>
+              <div className="mx-auto grid h-36 w-36 place-items-center overflow-hidden rounded-2xl border border-border bg-white">
+                {trackingNumber ? (
+                  <img
+                    alt="Tracking QR"
+                    className="h-full w-full"
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(`${typeof window !== "undefined" ? window.location.origin : ""}/track?q=${trackingNumber}`)}`}
+                  />
+                ) : (
+                  <QrCode className="h-12 w-12 text-muted-foreground" />
+                )}
               </div>
             </div>
             <div className="flex flex-wrap gap-2 border-t border-border p-5 sm:p-6">
@@ -638,7 +671,9 @@ function RegisterParcel() {
                     className="h-11 flex-1 rounded-xl sm:h-12"
                     style={{ background: "var(--tenant-primary)", color: "var(--tenant-primary-fg)" }}
                   >
-                    <Link to="/portal/track">Track parcel</Link>
+                    <Link to="/portal/track" search={trackingNumber ? { q: trackingNumber } : {}}>
+                      Track parcel
+                    </Link>
                   </Button>
                   <Button asChild variant="outline" className="h-11 flex-1 rounded-xl sm:h-12">
                     <Link to="/portal">Done</Link>
@@ -800,6 +835,28 @@ function RegisterParcel() {
                   />
                   <Field label="NRC (optional)" value={form.senderNrc} onChange={set("senderNrc")} large />
                   <Field label="Email (optional)" value={form.senderEmail} onChange={set("senderEmail")} large />
+                  {branchOptions.length > 1 ? (
+                    <div className="space-y-1.5 sm:col-span-2">
+                      <Label className="md:text-sm">
+                        Drop-off office <span className="text-[var(--tenant-primary)]">*</span>
+                      </Label>
+                      <Select
+                        value={form.originBranchId || branchOptions[0]?.id}
+                        onValueChange={(v) => setForm((f) => ({ ...f, originBranchId: v }))}
+                      >
+                        <SelectTrigger className="h-11 w-full rounded-xl sm:h-12 md:h-14 md:text-lg">
+                          <SelectValue placeholder="Which office receives this parcel?" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {branchOptions.map((b) => (
+                            <SelectItem key={b.id} value={b.id}>
+                              {b.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ) : null}
                   {checkoutAs === "account" && !fromReception ? (
                     <>
                       <Field
@@ -854,10 +911,12 @@ function RegisterParcel() {
                     <Select
                       value={form.destination}
                       onValueChange={(v) => {
+                        const picks = branchesForProvince(branchOptions, v === OTHER_PROVINCE_VALUE ? "" : v);
                         setForm((f) => ({
                           ...f,
                           destination: v,
                           destinationOther: v === OTHER_PROVINCE_VALUE ? f.destinationOther : "",
+                          destBranchId: picks.length === 1 ? picks[0]!.id : picks.some((p) => p.id === f.destBranchId) ? f.destBranchId : picks[0]?.id ?? "",
                         }));
                       }}
                     >
@@ -903,6 +962,28 @@ function RegisterParcel() {
                       </p>
                     )}
                   </div>
+                  {destBranchChoices.length ? (
+                    <div className="space-y-1.5 sm:col-span-2">
+                      <Label className="md:text-sm">
+                        Collect at office <span className="text-[var(--tenant-primary)]">*</span>
+                      </Label>
+                      <Select
+                        value={form.destBranchId || destBranchChoices[0]?.id}
+                        onValueChange={(v) => setForm((f) => ({ ...f, destBranchId: v }))}
+                      >
+                        <SelectTrigger className="h-11 w-full rounded-xl sm:h-12 md:h-14 md:text-lg">
+                          <SelectValue placeholder="Which office will they collect from?" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {destBranchChoices.map((b) => (
+                            <SelectItem key={b.id} value={b.id}>
+                              {b.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
 

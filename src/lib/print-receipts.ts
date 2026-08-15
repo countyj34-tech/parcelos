@@ -1,4 +1,5 @@
 import { money } from "@/lib/money";
+import { printViaBluetooth } from "@/lib/thermal-bluetooth";
 import type { Parcel } from "@/lib/types/parcel";
 import type { TenantBranding } from "@/lib/tenant";
 
@@ -10,14 +11,7 @@ type ReceiptPrintProps = {
   copies?: number;
 };
 
-/** Opens a print window with N identical thermal-style receipts. */
-export function printParcelReceipts({
-  tenant,
-  parcel,
-  fee,
-  methodLabel,
-  copies = 3,
-}: ReceiptPrintProps) {
+function receiptLines(input: ReceiptPrintProps, copyLabel: string): string[] {
   const when = new Date().toLocaleString("en-GB", {
     day: "numeric",
     month: "short",
@@ -25,36 +19,64 @@ export function printParcelReceipts({
     hour: "2-digit",
     minute: "2-digit",
   });
+  return [
+    input.tenant.name.toUpperCase(),
+    input.tenant.tagline || "Courier receipt",
+    copyLabel,
+    "----------------",
+    `Tracking: ${input.parcel.tracking}`,
+    `Date: ${when}`,
+    `From: ${input.parcel.sender}`,
+    input.parcel.senderPhone,
+    `To: ${input.parcel.receiver}`,
+    input.parcel.receiverPhone,
+    `${input.parcel.origin} -> ${input.parcel.destination}`,
+    `Pay: ${input.methodLabel}`,
+    `AMOUNT: ${money(input.fee)}`,
+    "Thank you",
+    "----------------",
+  ];
+}
 
+function receiptHtml(input: ReceiptPrintProps) {
+  const when = new Date().toLocaleString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
   const copyLabels = ["CUSTOMER COPY", "COUNTER COPY", "ARCHIVE COPY"];
+  const copies = input.copies ?? 3;
   const blocks = Array.from({ length: copies }, (_, i) => {
     const label = copyLabels[i] ?? `COPY ${i + 1}`;
     return `
       <section class="receipt">
         <header>
-          ${tenant.logoUrl ? `<img src="${tenant.logoUrl}" alt="" class="logo" />` : ""}
-          <h1>${escapeHtml(tenant.name)}</h1>
-          <p class="muted">${escapeHtml(tenant.tagline || "Courier receipt")}</p>
+          ${input.tenant.logoUrl ? `<img src="${escapeHtml(input.tenant.logoUrl)}" alt="" class="logo" />` : ""}
+          <h1>${escapeHtml(input.tenant.name)}</h1>
+          <p class="muted">${escapeHtml(input.tenant.tagline || "Courier receipt")}</p>
           <p class="copy">${label}</p>
         </header>
         <dl>
-          <div><dt>Tracking</dt><dd>${escapeHtml(parcel.tracking)}</dd></div>
+          <div><dt>Tracking</dt><dd>${escapeHtml(input.parcel.tracking)}</dd></div>
           <div><dt>Date</dt><dd>${escapeHtml(when)}</dd></div>
-          <div><dt>Sender</dt><dd>${escapeHtml(parcel.sender)} · ${escapeHtml(parcel.senderPhone)}</dd></div>
-          <div><dt>Receiver</dt><dd>${escapeHtml(parcel.receiver)} · ${escapeHtml(parcel.receiverPhone)}</dd></div>
-          <div><dt>Route</dt><dd>${escapeHtml(parcel.origin)} → ${escapeHtml(parcel.destination)}</dd></div>
-          <div><dt>Payment</dt><dd>${escapeHtml(methodLabel)}</dd></div>
+          <div><dt>Sender</dt><dd>${escapeHtml(input.parcel.sender)} · ${escapeHtml(input.parcel.senderPhone)}</dd></div>
+          <div><dt>Receiver</dt><dd>${escapeHtml(input.parcel.receiver)} · ${escapeHtml(input.parcel.receiverPhone)}</dd></div>
+          <div><dt>Route</dt><dd>${escapeHtml(input.parcel.origin)} → ${escapeHtml(input.parcel.destination)}</dd></div>
+          <div><dt>Payment</dt><dd>${escapeHtml(input.methodLabel)}</dd></div>
         </dl>
-        <p class="total">Amount paid<br/><strong>${escapeHtml(money(fee))}</strong></p>
-        <p class="muted foot">Thank you for choosing ${escapeHtml(tenant.name)}</p>
+        <p class="total">Amount paid<br/><strong>${escapeHtml(money(input.fee))}</strong></p>
+        <p class="muted foot">Thank you for choosing ${escapeHtml(input.tenant.name)}</p>
       </section>
     `;
   }).join('<div class="cut"></div>');
 
-  const html = `<!DOCTYPE html>
-<html><head><meta charset="utf-8" /><title>Receipts — ${escapeHtml(parcel.tracking)}</title>
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8" /><title>Receipts — ${escapeHtml(input.parcel.tracking)}</title>
 <style>
   @page { size: 80mm auto; margin: 4mm; }
+  html, body { margin: 0; }
   body { font-family: ui-monospace, Menlo, Consolas, monospace; color: #111; }
   .receipt { padding: 8px 4px 24px; }
   .logo { width: 48px; height: 48px; object-fit: contain; display: block; margin: 0 auto 6px; }
@@ -70,15 +92,63 @@ export function printParcelReceipts({
   .foot { margin-top: 12px; }
   .cut { border-top: 1px dashed #999; margin: 8px 0 16px; page-break-after: always; }
   @media print { .cut { page-break-after: always; } }
-</style></head><body>${blocks}
-<script>window.onload = () => { window.print(); };</script>
-</body></html>`;
+</style></head><body>${blocks}</body></html>`;
+}
 
-  const win = window.open("", "_blank", "noopener,noreferrer,width=420,height=720");
-  if (!win) return false;
-  win.document.write(html);
-  win.document.close();
+function printViaIframe(html: string): boolean {
+  if (typeof document === "undefined") return false;
+  const iframe = document.createElement("iframe");
+  iframe.setAttribute("aria-hidden", "true");
+  iframe.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0;pointer-events:none";
+  document.body.appendChild(iframe);
+  const win = iframe.contentWindow;
+  const doc = iframe.contentDocument ?? win?.document;
+  if (!win || !doc) {
+    iframe.remove();
+    return false;
+  }
+  doc.open();
+  doc.write(html);
+  doc.close();
+
+  const run = () => {
+    try {
+      win.focus();
+      win.print();
+    } catch (err) {
+      console.warn("[printViaIframe]", err);
+    }
+    window.setTimeout(() => iframe.remove(), 60_000);
+  };
+
+  if (doc.readyState === "complete") {
+    window.setTimeout(run, 250);
+  } else {
+    iframe.onload = () => window.setTimeout(run, 250);
+  }
   return true;
+}
+
+/**
+ * Prints thermal receipts immediately.
+ * Uses a connected Bluetooth printer when the browser allows it,
+ * otherwise the device print dialog (paired Bluetooth / USB / system printer).
+ */
+export async function printParcelReceipts(input: ReceiptPrintProps): Promise<boolean> {
+  const copies = input.copies ?? 3;
+  const copyLabels = ["CUSTOMER COPY", "COUNTER COPY", "ARCHIVE COPY"];
+  const lines = Array.from({ length: copies }, (_, i) =>
+    receiptLines(input, copyLabels[i] ?? `COPY ${i + 1}`),
+  ).flat();
+
+  try {
+    const ble = await printViaBluetooth(lines);
+    if (ble) return true;
+  } catch (err) {
+    console.warn("[printParcelReceipts bluetooth]", err);
+  }
+
+  return printViaIframe(receiptHtml(input));
 }
 
 function escapeHtml(s: string) {

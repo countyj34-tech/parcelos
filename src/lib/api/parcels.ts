@@ -1,3 +1,4 @@
+import { phoneSearchVariants } from "@/lib/phone-zm";
 import { getSupabase } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { mapDbParcelToUi, type DbParcelRow } from "@/lib/api/mappers";
@@ -112,8 +113,8 @@ export async function searchReceptionParcels(
   let req = supabase.from("parcels").select(PARCEL_SELECT).eq("soft_delete", false).limit(20);
 
   if (mode === "phone") {
-    const digits = q.replace(/\s+/g, "");
-    req = req.or(`sender_phone.ilike.%${digits}%,receiver_phone.ilike.%${digits}%`);
+    const variants = phoneSearchVariants(q);
+    req = req.or(variants.map((v) => `sender_phone.ilike.%${v}%,receiver_phone.ilike.%${v}%`).join(","));
   } else {
     req = req.ilike("tracking_number", `%${q.toUpperCase()}%`);
   }
@@ -214,6 +215,19 @@ export async function fetchParcelTrackingEvents(tracking: string) {
   const supabase = getSupabase();
   if (!supabase) return [];
 
+  const { data: rpcRows, error: rpcError } = await supabase.rpc("list_parcel_tracking_public", {
+    p_tracking: tracking.trim().toUpperCase(),
+  });
+  if (!rpcError && Array.isArray(rpcRows)) {
+    return rpcRows as Array<{
+      title: string;
+      description: string | null;
+      occurred_at: string;
+      status: string;
+      location_label?: string | null;
+    }>;
+  }
+
   const { data: parcel } = await supabase
     .from("parcels")
     .select("id")
@@ -224,7 +238,7 @@ export async function fetchParcelTrackingEvents(tracking: string) {
 
   const { data } = await supabase
     .from("parcel_tracking")
-    .select("title, description, occurred_at, status")
+    .select("title, description, occurred_at, status, location_label")
     .eq("parcel_id", parcel.id)
     .eq("is_public", true)
     .order("occurred_at", { ascending: true });
@@ -415,12 +429,11 @@ async function createGuestParcelLegacy(input: CreateGuestParcelInput): Promise<{
 
 export async function listCompanyBranches(
   companyId: string,
-): Promise<Array<{ id: string; name: string; code: string }>> {
+): Promise<Array<{ id: string; name: string; code: string; city?: string | null }>> {
   if (!isSupabaseConfigured()) return [];
   const supabase = getSupabase();
   if (!supabase) return [];
 
-  // Prefer SECURITY DEFINER RPC so anonymous customers on share links can load branches
   const { data: rpcRows, error: rpcError } = await supabase.rpc("list_company_branches_public", {
     p_company_id: companyId,
   });
@@ -429,12 +442,13 @@ export async function listCompanyBranches(
       id: String((b as { id: string }).id),
       name: String((b as { name: string }).name),
       code: String((b as { code: string }).code ?? ""),
+      city: ((b as { city?: string | null }).city as string | null | undefined) ?? null,
     }));
   }
 
   const { data, error } = await supabase
     .from("branches")
-    .select("id, name, code")
+    .select("id, name, code, city")
     .eq("company_id", companyId)
     .eq("soft_delete", false)
     .eq("is_active", true)
@@ -442,7 +456,7 @@ export async function listCompanyBranches(
     .order("name");
 
   if (error || !data) return [];
-  return data as Array<{ id: string; name: string; code: string }>;
+  return data as Array<{ id: string; name: string; code: string; city?: string | null }>;
 }
 
 export const DEFAULT_PARCEL_CATEGORIES = [

@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { ImagePlus, Loader2, Trash2, Upload } from "lucide-react";
 import { PageHeader } from "@/components/dashboard/dashboard-shell";
@@ -413,7 +413,9 @@ function SettingsPage() {
             <div className="space-y-2"><Label>Default opening</Label><Input defaultValue="07:30" className="h-11 rounded-xl" /></div>
             <div className="space-y-2"><Label>Default closing</Label><Input defaultValue="18:00" className="h-11 rounded-xl" /></div>
           </div>
-          <Button className="mt-6 rounded-xl">Manage branches</Button>
+          <Button asChild className="mt-6 rounded-xl">
+            <Link to="/app/branches">Manage branches</Link>
+          </Button>
         </TabsContent>
 
         <TabsContent value="pricing" className="card-elevated mt-5 space-y-6 p-6">
