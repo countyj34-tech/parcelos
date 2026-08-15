@@ -381,22 +381,22 @@ function SettingsPage() {
         </TabsContent>
 
         <TabsContent value="profile" className="card-elevated mt-5 p-6">
+          <p className="mb-5 text-sm text-muted-foreground">
+            These are this company’s live details. Change phone, email and logo on the Logo &amp; theme tab.
+          </p>
           <div className="grid gap-5 sm:grid-cols-2">
             {[
-              ["Company name", "Swift Logistics Limited"],
-              ["Trading name", "Swift Logistics"],
-              ["Head office", "Cairo Road, Lusaka, Zambia"],
-              ["Registration number", "120210004567"],
-              ["TPIN", "1002938475"],
-              ["Support phone", "+260 211 234 500"],
+              ["Company name", tenant.name],
+              ["Portal slug", tenant.slug],
+              ["Support phone", tenant.supportPhone || "Not set"],
+              ["Support email", tenant.supportEmail || "Not set"],
             ].map(([l, v]) => (
               <div key={l} className="space-y-2">
                 <Label>{l}</Label>
-                <Input defaultValue={v} className="h-11 rounded-xl" />
+                <Input value={v} readOnly className="h-11 rounded-xl bg-muted/40" />
               </div>
             ))}
           </div>
-          <Button className="mt-6 rounded-full">Save company profile</Button>
         </TabsContent>
 
         <TabsContent value="branding" className="card-elevated mt-5 p-6">

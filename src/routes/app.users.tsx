@@ -28,6 +28,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useBranchNames, useCompanyStaff } from "@/hooks/use-parcels";
 import {
   assignStaffBranch,
+  createDispatchDriver,
   createStaffInvite,
   provisionStaff,
   setStaffActive,
@@ -58,16 +59,36 @@ function StaffPage() {
   const [password, setPassword] = useState("");
   const [mode, setMode] = useState<"account" | "link">("account");
   const [inviteLink, setInviteLink] = useState<string | null>(null);
+  const [createdLogin, setCreatedLogin] = useState<{ name: string; email: string; password: string } | null>(null);
 
-  const refresh = () => void queryClient.invalidateQueries({ queryKey: ["company-staff"] });
+  const refresh = () => void queryClient.invalidateQueries({ queryKey: ["company-staff"], refetchType: "all" });
+
+  const isDriverRole = roleCode === "driver";
 
   const onInvite = async () => {
-    if (!fullName.trim() || !email.trim()) {
+    if (!fullName.trim()) {
+      toast.error("Name is required");
+      return;
+    }
+    if (!isDriverRole && !email.trim()) {
       toast.error("Name and email are required");
       return;
     }
     setBusy(true);
     try {
+      if (isDriverRole) {
+        await createDispatchDriver({
+          name: fullName,
+          phone,
+          license: undefined,
+        });
+        toast.success("Driver saved — they do not log in. Assign them on Dispatch.");
+        setOpen(false);
+        setFullName("");
+        setPhone("");
+        refresh();
+        return;
+      }
       if (mode === "account") {
         if (password.length < 8) {
           toast.error("Temporary password must be at least 8 characters");
@@ -82,7 +103,8 @@ function StaffPage() {
           phone,
           branchId: branchId === "none" ? null : branchId,
         });
-        toast.success("Staff account created — they can sign in now");
+        setCreatedLogin({ name: fullName.trim(), email: email.trim(), password });
+        toast.success("Account created — they can sign in now");
       } else {
         const invite = await createStaffInvite({
           email,
@@ -147,7 +169,9 @@ function StaffPage() {
     <div className="space-y-6">
       <PageHeader
         title="Staff"
-        description={isLoading ? "Loading…" : `${staff.length} team member${staff.length === 1 ? "" : "s"}`}
+        description={
+          isLoading ? "Loading…" : `${staff.length} desk login${staff.length === 1 ? "" : "s"} · drivers are on Dispatch`
+        }
         actions={
           <Button className="rounded-xl" onClick={() => setOpen(true)}>
             <UserPlus className="mr-2 h-4 w-4" /> Invite staff
@@ -245,9 +269,13 @@ function StaffPage() {
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Invite staff</DialogTitle>
-            <DialogDescription>Create a login now, or copy an invite link for them to set a password.</DialogDescription>
+            <DialogDescription>
+              Desk staff (receptionist, dispatch, admin) get a login and stay signed in until they tap Sign out. Drivers
+              are name and phone only — no login.
+            </DialogDescription>
           </DialogHeader>
           <div className="grid gap-3 sm:grid-cols-2">
+            {isDriverRole ? null : (
             <div className="space-y-1.5 sm:col-span-2">
               <Label>Mode</Label>
               <Select value={mode} onValueChange={(v) => setMode(v as "account" | "link")}>
@@ -260,13 +288,21 @@ function StaffPage() {
                 </SelectContent>
               </Select>
             </div>
+            )}
             <div className="space-y-1.5 sm:col-span-2">
               <Label>Full name</Label>
               <Input className="rounded-xl" value={fullName} onChange={(e) => setFullName(e.target.value)} />
             </div>
             <div className="space-y-1.5 sm:col-span-2">
-              <Label>Work email</Label>
-              <Input type="email" className="rounded-xl" value={email} onChange={(e) => setEmail(e.target.value)} />
+              <Label>Work email {isDriverRole ? "(not needed)" : ""}</Label>
+              <Input
+                type="email"
+                className="rounded-xl"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                disabled={isDriverRole}
+                placeholder={isDriverRole ? "Drivers do not sign in" : ""}
+              />
             </div>
             <div className="space-y-1.5">
               <Label>Phone</Label>
@@ -303,7 +339,7 @@ function StaffPage() {
                 </SelectContent>
               </Select>
             </div>
-            {mode === "account" ? (
+            {mode === "account" && !isDriverRole ? (
               <div className="space-y-1.5 sm:col-span-2">
                 <Label>Temporary password</Label>
                 <Input
@@ -322,7 +358,7 @@ function StaffPage() {
             </Button>
             <Button className="rounded-xl" disabled={busy} onClick={() => void onInvite()}>
               {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              {mode === "account" ? "Create staff" : "Copy invite link"}
+              {isDriverRole ? "Save driver" : mode === "account" ? "Create staff" : "Copy invite link"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -374,6 +410,46 @@ function StaffPage() {
               Copy again
             </Button>
             <Button className="rounded-xl" onClick={() => setInviteLink(null)}>
+              Done
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={Boolean(createdLogin)} onOpenChange={(o) => !o && setCreatedLogin(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Give them these details</DialogTitle>
+            <DialogDescription>
+              {createdLogin?.name} signs in at your company login. They stay signed in on that device until they tap Sign
+              out.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 text-sm">
+            <p>
+              <span className="text-muted-foreground">Sign-in page</span>
+              <span className="mt-0.5 block font-mono text-xs">{typeof window !== "undefined" ? `${window.location.origin}/login` : "/login"}</span>
+            </p>
+            <p>
+              <span className="text-muted-foreground">Email</span>
+              <span className="mt-0.5 block font-medium">{createdLogin?.email}</span>
+            </p>
+            <p>
+              <span className="text-muted-foreground">Password</span>
+              <span className="mt-0.5 block font-medium">{createdLogin?.password}</span>
+            </p>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              className="rounded-xl"
+              onClick={() => {
+                const text = `ParcelOS login\n${window.location.origin}/login\n${createdLogin?.email}\n${createdLogin?.password}`;
+                void navigator.clipboard.writeText(text).then(() => toast.success("Copied"));
+              }}
+            >
+              Copy details
+            </Button>
+            <Button className="rounded-xl" onClick={() => setCreatedLogin(null)}>
               Done
             </Button>
           </DialogFooter>

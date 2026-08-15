@@ -155,6 +155,18 @@ function TrackingAdmin() {
             </Button>
           )}
         </div>
+        {live.shareUrl ? (
+          <p className="mt-3 text-sm">
+            Van link:{" "}
+            <button
+              type="button"
+              className="font-medium text-primary underline"
+              onClick={() => void navigator.clipboard.writeText(live.shareUrl ?? "")}
+            >
+              Copy GPS link for the phone in the vehicle
+            </button>
+          </p>
+        ) : null}
         {live.running && live.fix ? (
           <p className="mt-3 text-sm text-muted-foreground">
             Sharing {live.fix.lat.toFixed(5)}, {live.fix.lng.toFixed(5)}

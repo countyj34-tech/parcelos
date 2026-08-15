@@ -16,6 +16,8 @@ export function getSupabase(): SupabaseClient | null {
         persistSession: true,
         autoRefreshToken: true,
         detectSessionInUrl: true,
+        storage: typeof window !== "undefined" ? window.localStorage : undefined,
+        storageKey: "parcelos-company-auth",
       },
     });
   }

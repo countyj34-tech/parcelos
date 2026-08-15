@@ -16,6 +16,7 @@ export function useLiveRun(companyId: string | null) {
   const [error, setError] = useState<string | null>(null);
   const [fix, setFix] = useState<LiveFix | null>(null);
   const [updates, setUpdates] = useState<TrackingNotify[]>([]);
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
   const runIdRef = useRef<string | null>(null);
   const watchRef = useRef<number | null>(null);
   const lastSentRef = useRef(0);
@@ -69,8 +70,13 @@ export function useLiveRun(companyId: string | null) {
       setError(null);
       try {
         driverIdRef.current = driverId || null;
-        const id = await startDispatchRun(driverId, vehicleId);
-        runIdRef.current = id;
+        const started = await startDispatchRun(driverId, vehicleId);
+        runIdRef.current = started.id;
+        setShareUrl(
+          started.shareToken && typeof window !== "undefined"
+            ? `${window.location.origin}/run/${started.shareToken}`
+            : null,
+        );
         setRunning(true);
         setUpdates([]);
         watchRef.current = navigator.geolocation.watchPosition(
@@ -113,6 +119,7 @@ export function useLiveRun(companyId: string | null) {
     } finally {
       runIdRef.current = null;
       driverIdRef.current = null;
+      setShareUrl(null);
       setRunning(false);
       setBusy(false);
     }
@@ -120,5 +127,5 @@ export function useLiveRun(companyId: string | null) {
 
   useEffect(() => () => clearWatch(), []);
 
-  return { running, busy, error, fix, updates, start, stop };
+  return { running, busy, error, fix, updates, shareUrl, start, stop };
 }

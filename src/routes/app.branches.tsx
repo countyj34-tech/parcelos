@@ -64,6 +64,7 @@ function BranchesPage() {
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ["company-branches"] });
     void queryClient.invalidateQueries({ queryKey: ["branch-names"] });
+    void queryClient.invalidateQueries({ queryKey: ["company-dashboard"] });
   };
 
   const openCreate = () => {
@@ -173,10 +174,13 @@ function BranchesPage() {
   };
 
   const onDelete = async (b: CompanyBranch) => {
-    if (!window.confirm(`Delete ${b.name}? Active parcels must be finished first.`)) return;
+    if (!window.confirm(`Delete ${b.name}? It will disappear from this list and from drop-off / collect pickers.`)) return;
     try {
       await deleteCompanyBranch(b.id);
-      toast.success("Branch deleted");
+      queryClient.setQueryData(["company-branches"], (old: CompanyBranch[] | undefined) =>
+        (old ?? []).filter((row) => row.id !== b.id),
+      );
+      toast.success(`${b.name} deleted`);
       refresh();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not delete branch");

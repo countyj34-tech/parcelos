@@ -90,7 +90,7 @@ export function useCompanyStaff() {
   return useQuery({
     queryKey: ["company-staff"],
     queryFn: fetchCompanyStaff,
-    staleTime: 60_000,
+    staleTime: 10_000,
     enabled: isSupabaseConfigured(),
   });
 }

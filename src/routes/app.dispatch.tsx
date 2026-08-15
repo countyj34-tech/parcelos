@@ -26,14 +26,13 @@ import {
 } from "@/components/ui/select";
 import { useAuth } from "@/hooks/use-auth";
 import { useLiveRun } from "@/hooks/use-live-run";
-import { useBranchNames, useCompanyDispatch, useCompanyStaff, useParcels } from "@/hooks/use-parcels";
+import { useBranchNames, useCompanyDispatch, useParcels } from "@/hooks/use-parcels";
 import { useWorkspaceBranch } from "@/hooks/use-workspace-branch";
 import {
   assignDriverToParcels,
   createCompanyVehicle,
   createDispatchDriver,
   dispatchParcels,
-  ensureDriverProfile,
   listCompanyDrivers,
   setVehicleActive,
 } from "@/lib/api/company-admin";
@@ -78,7 +77,6 @@ function DispatchPage() {
     branchScope: "origin",
   });
   const { data: branches = [] } = useBranchNames(companyId);
-  const { data: staff = [] } = useCompanyStaff();
   const vehicles = data?.vehicles ?? [];
 
   const [open, setOpen] = useState(false);
@@ -95,7 +93,6 @@ function DispatchPage() {
   >([]);
   const [driverId, setDriverId] = useState("");
   const [vehicleId, setVehicleId] = useState("");
-  const [promoteStaffId, setPromoteStaffId] = useState("");
   const [driverOpen, setDriverOpen] = useState(false);
   const [driverName, setDriverName] = useState("");
   const [driverPhone, setDriverPhone] = useState("");
@@ -131,7 +128,8 @@ function DispatchPage() {
         make,
         model,
         capacityKg: Number(capacity) || 50,
-        branchId: branchId || null,
+        branchId: branchId || office.branchId || null,
+        companyId,
       });
       toast.success("Vehicle added");
       setOpen(false);
@@ -139,25 +137,6 @@ function DispatchPage() {
       refresh();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not add vehicle");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const onPromoteDriver = async () => {
-    if (!promoteStaffId) {
-      toast.error("Pick a staff member");
-      return;
-    }
-    setBusy(true);
-    try {
-      const id = await ensureDriverProfile(promoteStaffId);
-      toast.success("Driver added from staff");
-      refresh();
-      setDriverId(id);
-      setPromoteStaffId("");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not create driver");
     } finally {
       setBusy(false);
     }
@@ -264,8 +243,8 @@ function DispatchPage() {
           <div>
             <h2 className="text-base font-semibold">Live trip</h2>
             <p className="mt-1 max-w-xl text-sm text-muted-foreground">
-              Phone stays in the car. Moving → In Transit. Entering the destination city → tracking update. At the office
-              pin → Arrived, then Ready for Collection, with SMS/WhatsApp to the receiver.
+              Drivers do not log in. After dispatch, start GPS on the phone that will travel in the van — or send the
+              trip link to that phone. Moving → In Transit. At the destination office pin → Ready for Collection.
             </p>
             {onRoad.length ? (
               <p className="mt-2 text-sm">
@@ -291,6 +270,27 @@ function DispatchPage() {
             </Button>
           )}
         </div>
+        {live.shareUrl ? (
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <Input readOnly className="h-10 min-w-[200px] flex-1 rounded-xl font-mono text-xs" value={live.shareUrl} />
+            <Button
+              variant="outline"
+              className="rounded-xl"
+              onClick={() => void navigator.clipboard.writeText(live.shareUrl ?? "").then(() => toast.success("Trip link copied"))}
+            >
+              Copy GPS link
+            </Button>
+            <Button variant="outline" className="rounded-xl" asChild>
+              <a
+                href={`https://wa.me/?text=${encodeURIComponent(`Keep this page open in the van for GPS: ${live.shareUrl}`)}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Send on WhatsApp
+              </a>
+            </Button>
+          </div>
+        ) : null}
         {live.running && live.fix ? (
           <p className="mt-3 text-sm text-muted-foreground">
             {live.fix.lat.toFixed(5)}, {live.fix.lng.toFixed(5)}
@@ -350,29 +350,9 @@ function DispatchPage() {
           </Select>
         </div>
         <div className="space-y-1.5">
-          <Label>Add driver from staff</Label>
-          <div className="flex gap-2">
-            <Select value={promoteStaffId || "none"} onValueChange={(v) => setPromoteStaffId(v === "none" ? "" : v)}>
-              <SelectTrigger className="rounded-xl">
-                <SelectValue placeholder="Select staff" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Select staff</SelectItem>
-                {staff
-                  .filter((s) => s.status === "Active" && !drivers.some((d) => d.staffId === s.id))
-                  .map((s) => (
-                    <SelectItem key={s.id} value={s.id}>
-                      {s.name}
-                    </SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
-            <Button variant="outline" className="shrink-0 rounded-xl" disabled={busy} onClick={() => void onPromoteDriver()}>
-              Add
-            </Button>
-          </div>
-          <Button type="button" variant="secondary" className="mt-2 w-full rounded-xl" onClick={() => setDriverOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" /> New driver (name &amp; phone)
+          <Label>Driver (name &amp; phone — no login)</Label>
+          <Button type="button" variant="secondary" className="w-full rounded-xl" onClick={() => setDriverOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" /> New driver
           </Button>
         </div>
       </div>
@@ -483,7 +463,7 @@ function DispatchPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Add driver</DialogTitle>
-            <DialogDescription>Name and phone are enough — they do not need a login.</DialogDescription>
+            <DialogDescription>Name and phone only. Drivers do not get a login.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-3">
             <div className="space-y-1.5">

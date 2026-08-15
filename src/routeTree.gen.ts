@@ -43,6 +43,7 @@ import { Route as PortalProfileRouteImport } from './routes/portal.profile'
 import { Route as PortalRegisterRouteImport } from './routes/portal.register'
 import { Route as PortalSignInRouteImport } from './routes/portal.sign-in'
 import { Route as PortalTrackRouteImport } from './routes/portal.track'
+import { Route as RunTokenRouteImport } from './routes/run.$token'
 import { Route as AppReceptionRegisterRouteImport } from './routes/app.reception.register'
 
 const IndexRoute = IndexRouteImport.update({
@@ -215,6 +216,11 @@ const PortalTrackRoute = PortalTrackRouteImport.update({
   path: '/track',
   getParentRoute: () => PortalRoute,
 } as any)
+const RunTokenRoute = RunTokenRouteImport.update({
+  id: '/run/$token',
+  path: '/run/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AppReceptionRegisterRoute = AppReceptionRegisterRouteImport.update({
   id: '/register',
   path: '/register',
@@ -254,6 +260,7 @@ export interface FileRoutesByFullPath {
   '/portal/register': typeof PortalRegisterRoute
   '/portal/sign-in': typeof PortalSignInRoute
   '/portal/track': typeof PortalTrackRoute
+  '/run/$token': typeof RunTokenRoute
   '/app/': typeof AppIndexRoute
   '/portal/': typeof PortalIndexRoute
   '/app/reception/register': typeof AppReceptionRegisterRoute
@@ -289,6 +296,7 @@ export interface FileRoutesByTo {
   '/portal/register': typeof PortalRegisterRoute
   '/portal/sign-in': typeof PortalSignInRoute
   '/portal/track': typeof PortalTrackRoute
+  '/run/$token': typeof RunTokenRoute
   '/app': typeof AppIndexRoute
   '/portal': typeof PortalIndexRoute
   '/app/reception/register': typeof AppReceptionRegisterRoute
@@ -327,6 +335,7 @@ export interface FileRoutesById {
   '/portal/register': typeof PortalRegisterRoute
   '/portal/sign-in': typeof PortalSignInRoute
   '/portal/track': typeof PortalTrackRoute
+  '/run/$token': typeof RunTokenRoute
   '/app/': typeof AppIndexRoute
   '/portal/': typeof PortalIndexRoute
   '/app/reception/register': typeof AppReceptionRegisterRoute
@@ -366,6 +375,7 @@ export interface FileRouteTypes {
     | '/portal/register'
     | '/portal/sign-in'
     | '/portal/track'
+    | '/run/$token'
     | '/app/'
     | '/portal/'
     | '/app/reception/register'
@@ -401,6 +411,7 @@ export interface FileRouteTypes {
     | '/portal/register'
     | '/portal/sign-in'
     | '/portal/track'
+    | '/run/$token'
     | '/app'
     | '/portal'
     | '/app/reception/register'
@@ -438,6 +449,7 @@ export interface FileRouteTypes {
     | '/portal/register'
     | '/portal/sign-in'
     | '/portal/track'
+    | '/run/$token'
     | '/app/'
     | '/portal/'
     | '/app/reception/register'
@@ -455,6 +467,7 @@ export interface RootRouteChildren {
   TrackRoute: typeof TrackRoute
   CSlugRoute: typeof CSlugRoute
   InviteTokenRoute: typeof InviteTokenRoute
+  RunTokenRoute: typeof RunTokenRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -697,6 +710,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PortalTrackRouteImport
       parentRoute: typeof PortalRoute
     }
+    '/run/$token': {
+      id: '/run/$token'
+      path: '/run/$token'
+      fullPath: '/run/$token'
+      preLoaderRoute: typeof RunTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/app/reception/register': {
       id: '/app/reception/register'
       path: '/register'
@@ -794,6 +814,7 @@ const rootRouteChildren: RootRouteChildren = {
   TrackRoute: TrackRoute,
   CSlugRoute: CSlugRoute,
   InviteTokenRoute: InviteTokenRoute,
+  RunTokenRoute: RunTokenRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

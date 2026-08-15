@@ -13,6 +13,40 @@ async function client() {
   return supabase;
 }
 
+/** Prefer staff/workspace RPCs — users.company_id is often still null for live staff. */
+async function requireCompanyId(
+  supabase: Awaited<ReturnType<typeof client>>,
+  preferred?: string | null,
+): Promise<string> {
+  try {
+    await supabase.rpc("repair_my_company_link");
+  } catch {
+    /* optional until migration 25 */
+  }
+
+  const { data: rpcId } = await supabase.rpc("get_my_company_id");
+  if (typeof rpcId === "string" && /^[0-9a-f-]{36}$/i.test(rpcId)) return rpcId;
+  if (preferred && /^[0-9a-f-]{36}$/i.test(preferred)) return preferred;
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Sign in required");
+
+  const { data: profile } = await supabase.from("users").select("company_id").eq("id", user.id).maybeSingle();
+  if (profile?.company_id) return profile.company_id as string;
+
+  const { data: staff } = await supabase
+    .from("staff")
+    .select("company_id")
+    .eq("user_id", user.id)
+    .eq("is_active", true)
+    .maybeSingle();
+  if (staff?.company_id) return staff.company_id as string;
+
+  throw new Error("No company linked to your account. Sign out and sign in again.");
+}
+
 export async function createCompanyBranch(input: {
   name: string;
   code: string;
@@ -27,10 +61,7 @@ export async function createCompanyBranch(input: {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-
-  const { data: profile } = await supabase.from("users").select("company_id").eq("id", user!.id).maybeSingle();
-  const companyId = profile?.company_id as string | undefined;
-  if (!companyId) throw new Error("No company linked to your account");
+  const companyId = await requireCompanyId(supabase);
 
   const code = input.code.trim().toUpperCase() || input.name.slice(0, 3).toUpperCase();
   const city = input.city.trim() || "Lusaka";
@@ -88,7 +119,33 @@ export async function updateCompanyBranch(input: {
 export async function deleteCompanyBranch(branchId: string) {
   const supabase = await client();
   const { error } = await supabase.rpc("delete_company_branch", { p_id: branchId });
-  if (error) throw new Error(error.message);
+  if (!error) return;
+
+  const codeSuffix = `-x${branchId.replace(/-/g, "").slice(0, 8)}`;
+  const { data, error: upError } = await supabase
+    .from("branches")
+    .update({
+      soft_delete: true,
+      is_active: false,
+      is_head_office: false,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", branchId)
+    .eq("soft_delete", false)
+    .select("id, code")
+    .maybeSingle();
+
+  if (data?.id) {
+    if (data.code && !String(data.code).includes("-x")) {
+      await supabase
+        .from("branches")
+        .update({ code: `${String(data.code).slice(0, 24)}${codeSuffix}` })
+        .eq("id", branchId);
+    }
+    return;
+  }
+
+  throw new Error(upError?.message || error.message);
 }
 
 export async function setBranchActive(branchId: string, active: boolean) {
@@ -103,26 +160,39 @@ export async function createCompanyVehicle(input: {
   model?: string;
   capacityKg?: number;
   branchId?: string | null;
+  companyId?: string | null;
 }) {
   const supabase = await client();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  const { data: profile } = await supabase.from("users").select("company_id").eq("id", user!.id).maybeSingle();
-  const companyId = profile?.company_id as string | undefined;
-  if (!companyId) throw new Error("No company linked to your account");
+  const companyId = await requireCompanyId(supabase, input.companyId);
+
+  const payload = {
+    p_registration: input.registration.trim().toUpperCase(),
+    p_make: input.make?.trim() || null,
+    p_model: input.model?.trim() || null,
+    p_capacity_kg: input.capacityKg ?? 50,
+    p_branch_id: input.branchId || null,
+  };
+
+  const { data: rpcId, error: rpcError } = await supabase.rpc("create_company_vehicle", payload);
+  if (!rpcError && rpcId) return { id: rpcId as string };
+  if (rpcError && rpcError.code !== "PGRST202" && !/function .*create_company_vehicle/i.test(rpcError.message)) {
+    throw new Error(rpcError.message);
+  }
 
   const { data, error } = await supabase
     .from("vehicles")
     .insert({
       company_id: companyId,
-      registration_no: input.registration.trim().toUpperCase(),
-      make: input.make?.trim() || null,
-      model: input.model?.trim() || null,
-      capacity_kg: input.capacityKg ?? 50,
-      branch_id: input.branchId || null,
+      registration_no: payload.p_registration,
+      make: payload.p_make,
+      model: payload.p_model,
+      capacity_kg: payload.p_capacity_kg,
+      branch_id: payload.p_branch_id,
       is_active: true,
-      created_by: user!.id,
+      created_by: user?.id ?? null,
     })
     .select("id")
     .single();
@@ -290,11 +360,7 @@ export async function updateMessagingSettings(input: {
   notifyOnReady: boolean;
 }) {
   const supabase = await client();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  const { data: profile } = await supabase.from("users").select("company_id").eq("id", user!.id).maybeSingle();
-  if (!profile?.company_id) throw new Error("No company");
+  const companyId = await requireCompanyId(supabase);
 
   const { error } = await supabase
     .from("company_settings")
@@ -307,25 +373,26 @@ export async function updateMessagingSettings(input: {
       notify_on_dispatch: input.notifyOnDispatch,
       notify_on_ready: input.notifyOnReady,
     })
-    .eq("company_id", profile.company_id);
+    .eq("company_id", companyId);
 
   if (error) throw new Error(error.message);
 }
 
 export async function fetchMessagingSettings() {
   const supabase = await client();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  const { data: profile } = await supabase.from("users").select("company_id").eq("id", user!.id).maybeSingle();
-  if (!profile?.company_id) return null;
+  let companyId: string;
+  try {
+    companyId = await requireCompanyId(supabase);
+  } catch {
+    return null;
+  }
 
   const { data } = await supabase
     .from("company_settings")
     .select(
       "sms_enabled, whatsapp_enabled, sms_sender_id, whatsapp_number, notify_on_receive, notify_on_dispatch, notify_on_ready",
     )
-    .eq("company_id", profile.company_id)
+    .eq("company_id", companyId)
     .maybeSingle();
 
   if (!data) return null;
@@ -347,7 +414,7 @@ export const STAFF_ROLE_OPTIONS = [
   { code: "dispatcher", label: "Dispatcher" },
   { code: "finance", label: "Finance" },
   { code: "customer_support", label: "Customer Support" },
-  { code: "driver", label: "Driver" },
+  { code: "driver", label: "Driver (no login)" },
   { code: "auditor", label: "Auditor" },
 ] as const;
 

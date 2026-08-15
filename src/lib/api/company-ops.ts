@@ -259,6 +259,21 @@ export async function fetchCompanyStaff(): Promise<CompanyStaffMember[]> {
   const supabase = await requireSession();
   if (!supabase) return [];
 
+  const { data: rpcRows, error: rpcError } = await supabase.rpc("list_company_staff");
+  if (!rpcError && Array.isArray(rpcRows)) {
+    return rpcRows.map((row: Record<string, unknown>) => ({
+      id: String(row["id"] ?? ""),
+      userId: String(row["user_id"] ?? ""),
+      name: String(row["full_name"] ?? "Staff"),
+      email: String(row["email"] ?? "—"),
+      phone: (row["phone"] as string | null) ?? null,
+      role: String(row["role_name"] ?? row["role_code"] ?? "Staff"),
+      branch: String(row["branch_name"] ?? "—"),
+      status: row["is_active"] === false ? ("Inactive" as const) : ("Active" as const),
+    }));
+  }
+
+  // Fallback: hint user_id so PostgREST does not confuse created_by / updated_by.
   const { data, error } = await supabase
     .from("staff")
     .select(
@@ -268,7 +283,7 @@ export async function fetchCompanyStaff(): Promise<CompanyStaffMember[]> {
       is_active,
       phone,
       roles(name, code),
-      users(full_name, email, phone),
+      users!staff_user_id_fkey(full_name, email, phone),
       staff_branch_assignments(
         is_primary,
         soft_delete,
@@ -281,7 +296,7 @@ export async function fetchCompanyStaff(): Promise<CompanyStaffMember[]> {
     .limit(200);
 
   if (error || !data) {
-    if (error) console.warn("[fetchCompanyStaff]", error.message);
+    if (error) console.warn("[fetchCompanyStaff]", error.message, rpcError?.message);
     return [];
   }
 

@@ -198,15 +198,23 @@ async function writeParcelStatusDirect(input: {
   };
 }
 
-export async function startDispatchRun(driverId?: string | null, vehicleId?: string | null): Promise<string> {
+export async function startDispatchRun(
+  driverId?: string | null,
+  vehicleId?: string | null,
+): Promise<{ id: string; shareToken: string | null }> {
   const supabase = await client();
   const { data, error } = await supabase.rpc("start_dispatch_run", {
     p_driver_id: driverId || null,
     p_vehicle_id: vehicleId || null,
   });
-  if (!error && data) return data as string;
   if (error && !rpcMissing(error.message)) throw new Error(error.message);
-  return `local-${crypto.randomUUID()}`;
+  const id = (data as string | null) || `local-${crypto.randomUUID()}`;
+  let shareToken: string | null = null;
+  if (!String(id).startsWith("local-")) {
+    const { data: token } = await supabase.rpc("dispatch_run_share_token", { p_run_id: id });
+    if (typeof token === "string" && token) shareToken = token;
+  }
+  return { id, shareToken };
 }
 
 export async function stopDispatchRun(runId?: string | null): Promise<void> {
@@ -248,6 +256,25 @@ export async function reportRunLocation(input: {
     await sendTrackingNotices(input.companyId, row);
   }
   return rows;
+}
+
+export async function reportRunLocationPublic(input: {
+  token: string;
+  lat: number;
+  lng: number;
+  accuracyM?: number | null;
+}): Promise<TrackingNotify[]> {
+  if (!isSupabaseConfigured()) throw new Error("Supabase is not configured");
+  const supabase = getSupabase();
+  if (!supabase) throw new Error("Supabase is not available");
+  const { data, error } = await supabase.rpc("report_run_location_public", {
+    p_token: input.token,
+    p_lat: input.lat,
+    p_lng: input.lng,
+    p_accuracy_m: input.accuracyM ?? null,
+  });
+  if (error) throw new Error(error.message);
+  return (Array.isArray(data) ? data : data ? [data] : []) as TrackingNotify[];
 }
 
 type BranchGeo = { name: string | null; city: string | null; latitude: number | null; longitude: number | null };
