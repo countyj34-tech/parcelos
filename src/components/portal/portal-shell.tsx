@@ -4,7 +4,10 @@ import { TenantFooter, TenantHeader } from "@/components/portal/tenant-brand";
 import { PwaInstallPrompt } from "@/components/portal/pwa-install-prompt";
 import { useTenant } from "@/hooks/use-tenant";
 
-const HOME_ROUTES = new Set(["/portal", "/portal/"]);
+function isCompanyHomePath(pathname: string) {
+  return pathname === "/portal" || pathname === "/portal/" || /^\/c\/[^/]+\/?$/.test(pathname);
+}
+
 const FULL_PAGE_ROUTES = new Set(["/portal/sign-in", "/portal/register"]);
 
 export function PortalShell({
@@ -26,7 +29,7 @@ export function PortalShell({
     );
   }
 
-  if (HOME_ROUTES.has(pathname)) {
+  if (isCompanyHomePath(pathname)) {
     return (
       <div className="relative flex h-dvh max-h-dvh flex-col overflow-hidden">
         <img

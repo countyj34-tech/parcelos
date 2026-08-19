@@ -18,6 +18,7 @@ import { Route as PlatformRouteImport } from './routes/platform'
 import { Route as PortalRouteImport } from './routes/portal'
 import { Route as SignupRouteImport } from './routes/signup'
 import { Route as TrackRouteImport } from './routes/track'
+import { Route as TCodeRouteImport } from './routes/t.$code'
 import { Route as AppIndexRouteImport } from './routes/app.index'
 import { Route as AppBranchesRouteImport } from './routes/app.branches'
 import { Route as AppCompaniesRouteImport } from './routes/app.companies'
@@ -89,6 +90,11 @@ const SignupRoute = SignupRouteImport.update({
 const TrackRoute = TrackRouteImport.update({
   id: '/track',
   path: '/track',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TCodeRoute = TCodeRouteImport.update({
+  id: '/t/$code',
+  path: '/t/$code',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppIndexRoute = AppIndexRouteImport.update({
@@ -237,6 +243,7 @@ export interface FileRoutesByFullPath {
   '/portal': typeof PortalRouteWithChildren
   '/signup': typeof SignupRoute
   '/track': typeof TrackRoute
+  '/t/$code': typeof TCodeRoute
   '/app/branches': typeof AppBranchesRoute
   '/app/companies': typeof AppCompaniesRoute
   '/app/customers': typeof AppCustomersRoute
@@ -273,6 +280,7 @@ export interface FileRoutesByTo {
   '/platform': typeof PlatformRoute
   '/signup': typeof SignupRoute
   '/track': typeof TrackRoute
+  '/t/$code': typeof TCodeRoute
   '/app/branches': typeof AppBranchesRoute
   '/app/companies': typeof AppCompaniesRoute
   '/app/customers': typeof AppCustomersRoute
@@ -312,6 +320,7 @@ export interface FileRoutesById {
   '/portal': typeof PortalRouteWithChildren
   '/signup': typeof SignupRoute
   '/track': typeof TrackRoute
+  '/t/$code': typeof TCodeRoute
   '/app/branches': typeof AppBranchesRoute
   '/app/companies': typeof AppCompaniesRoute
   '/app/customers': typeof AppCustomersRoute
@@ -352,6 +361,7 @@ export interface FileRouteTypes {
     | '/portal'
     | '/signup'
     | '/track'
+    | '/t/$code'
     | '/app/branches'
     | '/app/companies'
     | '/app/customers'
@@ -388,6 +398,7 @@ export interface FileRouteTypes {
     | '/platform'
     | '/signup'
     | '/track'
+    | '/t/$code'
     | '/app/branches'
     | '/app/companies'
     | '/app/customers'
@@ -426,6 +437,7 @@ export interface FileRouteTypes {
     | '/portal'
     | '/signup'
     | '/track'
+    | '/t/$code'
     | '/app/branches'
     | '/app/companies'
     | '/app/customers'
@@ -465,6 +477,7 @@ export interface RootRouteChildren {
   PortalRoute: typeof PortalRouteWithChildren
   SignupRoute: typeof SignupRoute
   TrackRoute: typeof TrackRoute
+  TCodeRoute: typeof TCodeRoute
   CSlugRoute: typeof CSlugRoute
   InviteTokenRoute: typeof InviteTokenRoute
   RunTokenRoute: typeof RunTokenRoute
@@ -533,6 +546,13 @@ declare module '@tanstack/react-router' {
       path: '/track'
       fullPath: '/track'
       preLoaderRoute: typeof TrackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/t/$code': {
+      id: '/t/$code'
+      path: '/t/$code'
+      fullPath: '/t/$code'
+      preLoaderRoute: typeof TCodeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/app/': {
@@ -812,6 +832,7 @@ const rootRouteChildren: RootRouteChildren = {
   PortalRoute: PortalRouteWithChildren,
   SignupRoute: SignupRoute,
   TrackRoute: TrackRoute,
+  TCodeRoute: TCodeRoute,
   CSlugRoute: CSlugRoute,
   InviteTokenRoute: InviteTokenRoute,
   RunTokenRoute: RunTokenRoute,

@@ -29,7 +29,7 @@ const ACTIONS = [
   {
     label: "Track Parcel",
     desc: "Follow your shipment live",
-    to: "/portal/track",
+    to: "/track",
     icon: Search,
   },
   {
@@ -40,7 +40,7 @@ const ACTIONS = [
   },
 ] as const;
 
-function PortalHome() {
+export function PortalHome() {
   const { tenant } = useTenant();
 
   useEffect(() => {

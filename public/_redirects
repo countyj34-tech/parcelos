@@ -1,1 +1,5 @@
 /favicon.ico /favicon.png 200
+/t/*    /index.html   200
+/c/*    /index.html   200
+/track  /index.html   200
+

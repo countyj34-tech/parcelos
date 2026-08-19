@@ -4,7 +4,8 @@ import { PortalShell } from "@/components/portal/portal-shell";
 import { CompanyAccessGate } from "@/components/company-access-gate";
 import { useAuth } from "@/hooks/use-auth";
 import { useTenantPwaManifest } from "@/hooks/use-tenant-pwa-manifest";
-import { isCustomerPortalMode, isReceptionRegisterMode } from "@/lib/portal-mode";
+import { useTenant } from "@/hooks/use-tenant";
+import { getCustomerPortalSlug, isCustomerPortalMode, isReceptionRegisterMode } from "@/lib/portal-mode";
 import { getHomeRouteForRole } from "@/lib/roles";
 import { registerServiceWorker } from "@/lib/pwa";
 
@@ -14,6 +15,7 @@ export const Route = createFileRoute("/portal")({
 
 function PortalLayout() {
   const navigate = useNavigate();
+  const { activateTenant } = useTenant();
   const { isAuthenticated, isDemoMode, isSaasSuperAdmin, isCustomer, role } = useAuth();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const searchStr = useRouterState({ select: (s) => s.location.searchStr });
@@ -33,6 +35,21 @@ function PortalLayout() {
   useEffect(() => {
     registerServiceWorker();
   }, []);
+
+  useEffect(() => {
+    const slug = getCustomerPortalSlug();
+    if (slug) void activateTenant(slug);
+  }, [activateTenant]);
+
+  useEffect(() => {
+    if (!allowed) return;
+    if (staffWalkIn) return;
+    const slug = getCustomerPortalSlug();
+    if (!slug) return;
+    if (pathname === "/portal" || pathname === "/portal/") {
+      void navigate({ to: "/c/$slug", params: { slug }, replace: true });
+    }
+  }, [allowed, navigate, pathname, staffWalkIn]);
 
   useEffect(() => {
     if (allowed) return;

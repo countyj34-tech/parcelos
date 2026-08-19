@@ -2,6 +2,8 @@
  *  Company owners edit these fields from Settings → Branding / Pricing.
  *  Customers reach a company via `/c/{slug}` (share link / QR). */
 
+import { PLATFORM_OWNER, PRODUCT_NAME } from "@/lib/brand";
+
 export type TenantBranding = {
   id: string;
   slug: string;
@@ -53,24 +55,60 @@ export function readLastLiveTenant(): TenantBranding | null {
   }
 }
 
-/** Demo tenant: Swift Logistics (swiftlogistics.parcelos.africa) */
-export const DEMO_TENANT: TenantBranding = {
-  id: "tenant_swift_logistics",
-  slug: "swift-logistics",
-  name: "Swift Logistics",
-  tagline: "Fast. Reliable. Everywhere.",
-  logoInitials: "SL",
+/** Public marketing brand — never a fake courier company. */
+export const PLATFORM_TENANT: TenantBranding = {
+  id: "platform_parcelos",
+  slug: "parcelos",
+  name: PRODUCT_NAME,
+  tagline: "Courier software for African operators",
+  logoInitials: "PO",
   logoUrl: null,
   primaryColor: "#0F766E",
   primaryForeground: "#FFFFFF",
   accentColor: "#F59E0B",
-  supportPhone: "+260 211 234 500",
-  supportEmail: "support@swiftlogistics.zm",
-  domain: "swiftlogistics.parcelos.africa",
-  trackingDomain: "track.swiftlogistics.zm",
+  supportPhone: "",
+  supportEmail: `hello@${PLATFORM_OWNER.toLowerCase().replace(/[^a-z0-9]+/g, "")}.africa`,
+  domain: "parcelos.africa",
+  trackingDomain: "track.parcelos.africa",
+  heroImageUrl: "/images/hero-courier-ops.jpg",
+  priceChartUrl: null,
+};
+
+/** Local demo courier only when Supabase is not configured — never used as a live fallback. */
+export const DEMO_TENANT: TenantBranding = {
+  id: "tenant_demo_courier",
+  slug: "demo-courier",
+  name: "Demo Courier",
+  tagline: "Sample workspace for trying the desk",
+  logoInitials: "DC",
+  logoUrl: null,
+  primaryColor: "#0F766E",
+  primaryForeground: "#FFFFFF",
+  accentColor: "#F59E0B",
+  supportPhone: "",
+  supportEmail: "",
+  domain: "demo.parcelos.africa",
+  trackingDomain: "track.demo.parcelos.africa",
   heroImageUrl: "/images/hero-courier-ops.jpg",
   priceChartUrl: "/images/price-chart-sample.svg",
 };
+
+/** True when branding is ParcelOS / leftover Swift — not a real courier share site. */
+export function isPlaceholderTenant(t: { slug?: string | null; name?: string | null; id?: string | null }) {
+  const slug = (t.slug ?? "").trim().toLowerCase();
+  const name = (t.name ?? "").trim().toLowerCase();
+  const id = (t.id ?? "").trim().toLowerCase();
+  return (
+    slug === PLATFORM_TENANT.slug ||
+    slug === DEMO_TENANT.slug ||
+    slug === "swift-logistics" ||
+    slug === "swift-logistics" ||
+    id === "tenant_swift_logistics" ||
+    id === PLATFORM_TENANT.id ||
+    name === "swift logistics" ||
+    name === PRODUCT_NAME.toLowerCase()
+  );
+}
 
 /** Known demo companies — production would load from Supabase by slug/host. */
 const TENANT_CATALOG: Record<string, TenantBranding> = {
@@ -99,11 +137,11 @@ function applyOverrides(base: TenantBranding): TenantBranding {
 }
 
 export function getActiveTenantSlug(): string {
-  if (typeof window === "undefined") return DEMO_TENANT.slug;
+  if (typeof window === "undefined") return "";
   try {
-    return localStorage.getItem(ACTIVE_SLUG_KEY) || DEMO_TENANT.slug;
+    return localStorage.getItem(ACTIVE_SLUG_KEY) || "";
   } catch {
-    return DEMO_TENANT.slug;
+    return "";
   }
 }
 
@@ -113,8 +151,13 @@ export function setActiveTenantSlug(slug: string) {
 }
 
 export function resolveTenantFromHost(_host?: string): TenantBranding {
+  const last = typeof window !== "undefined" ? readLastLiveTenant() : null;
+  if (last && !isPlaceholderTenant(last)) return last;
   const slug = getActiveTenantSlug();
-  return getTenantBySlug(slug) ?? DEMO_TENANT;
+  if (slug && !isPlaceholderTenant({ slug })) {
+    return getTenantBySlug(slug) ?? last ?? PLATFORM_TENANT;
+  }
+  return last ?? PLATFORM_TENANT;
 }
 
 export function saveTenantOverrides(overrides: Partial<TenantBranding>) {
@@ -145,10 +188,10 @@ export function resolveCustomerPortalSlug(input: {
   name?: string | null;
 }): string | null {
   const slug = input.slug?.trim().toLowerCase() || "";
-  if (slug && slug !== DEMO_TENANT.slug) return slug;
+  if (slug && !isPlaceholderTenant({ slug })) return slug;
   const fromName = input.name ? slugifyCompanyName(input.name) : "";
-  if (fromName && fromName !== DEMO_TENANT.slug) return fromName;
-  return slug || null;
+  if (fromName && !isPlaceholderTenant({ slug: fromName })) return fromName;
+  return slug && !isPlaceholderTenant({ slug }) ? slug : null;
 }
 
 /** Path customers open from share link / QR (works on any host). */
@@ -214,8 +257,10 @@ export function getCustomerPortalUrl(tenant: TenantBranding, origin?: string): s
 
 /** Pretty domain companies show on posters (subdomain branding). */
 export function getPublicPortalLabel(tenant: TenantBranding): string {
-  if (tenant.domain && !tenant.domain.includes("swiftlogistics")) return tenant.domain;
-  if (tenant.slug && tenant.slug !== "swift-logistics") return `${tenant.slug}.parcelos.africa`;
+  if (tenant.domain && !isPlaceholderTenant(tenant) && !tenant.domain.includes("swift")) {
+    return tenant.domain;
+  }
+  if (tenant.slug && !isPlaceholderTenant(tenant)) return `${tenant.slug}.parcelos.africa`;
   return tenant.domain || `${tenant.slug}.parcelos.africa`;
 }
 

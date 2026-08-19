@@ -14,9 +14,10 @@ import { resolveCompanyById, resolveCompanyPublic } from "@/lib/api/tenant";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import {
   DEMO_TENANT,
+  PLATFORM_TENANT,
   getActiveTenantSlug,
+  isPlaceholderTenant,
   readLastLiveTenant,
-  resolveTenantFromHost,
   saveLastLiveTenant,
   saveTenantOverrides,
   setActiveTenantSlug,
@@ -36,12 +37,16 @@ type TenantContextValue = {
 const TenantContext = createContext<TenantContextValue | null>(null);
 
 function isDemoTenant(t: TenantBranding): boolean {
-  return t.id === DEMO_TENANT.id || t.slug === DEMO_TENANT.slug;
+  return isPlaceholderTenant(t);
 }
 
 export function TenantProvider({ children }: { children: ReactNode }) {
   const { companyId, profile, isDemoMode, isLoading: authLoading } = useAuth();
-  const [tenant, setTenant] = useState<TenantBranding>(() => readLastLiveTenant() ?? resolveTenantFromHost());
+  const [tenant, setTenant] = useState<TenantBranding>(() => {
+    const last = readLastLiveTenant();
+    if (last && !isPlaceholderTenant(last)) return last;
+    return PLATFORM_TENANT;
+  });
 
   const refreshTenant = useCallback(async () => {
     if (isBrowserOffline()) {
@@ -76,7 +81,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
     const slugFromProfile = profile?.companySlug?.trim().toLowerCase();
     const slug = slugFromProfile || getActiveTenantSlug();
 
-    if (isSupabaseConfigured() && slug && slug !== DEMO_TENANT.slug) {
+    if (isSupabaseConfigured() && slug && slug !== PLATFORM_TENANT.slug) {
       try {
         const remote = await withTimeout(resolveCompanyPublic(slug), 4000, "tenant-slug");
         if (remote) {
@@ -96,7 +101,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
     }
 
     if (isDemoMode) {
-      setTenant(resolveTenantFromHost());
+      setTenant(DEMO_TENANT);
       return;
     }
 
@@ -153,9 +158,8 @@ export function TenantProvider({ children }: { children: ReactNode }) {
       return false;
     }
 
-    const local = resolveTenantFromHost();
-    if (local.slug === key || key === DEMO_TENANT.slug) {
-      setTenant({ ...DEMO_TENANT, ...local, slug: DEMO_TENANT.slug });
+    if (key === DEMO_TENANT.slug) {
+      setTenant(DEMO_TENANT);
       return true;
     }
     return false;

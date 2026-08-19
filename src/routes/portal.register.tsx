@@ -7,6 +7,7 @@ import {
   Check,
   Clock,
   Copy,
+  MessageCircle,
   Package,
   PartyPopper,
   QrCode,
@@ -58,6 +59,7 @@ import { isCustomerPortalMode } from "@/lib/portal-mode";
 import { resolveCompanyPublic } from "@/lib/api/tenant";
 import { isCompanyUuid } from "@/lib/api/company-brand";
 import { useAuth } from "@/hooks/use-auth";
+import { getPublicTrackingUrl, getTrackingWhatsAppUrl } from "@/lib/tracking-url";
 
 export const Route = createFileRoute("/portal/register")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -625,8 +627,9 @@ function RegisterParcel() {
                       size="icon"
                       aria-label="Copy reference"
                       onClick={() => {
-                        void navigator.clipboard.writeText(trackingNumber);
-                        toast.success("Reference copied");
+                        const url = getPublicTrackingUrl(trackingNumber);
+                        void navigator.clipboard.writeText(url);
+                        toast.success("Tracking link copied — send this, not only the code");
                       }}
                     >
                       <Copy className="h-4 w-4" />
@@ -648,7 +651,7 @@ function RegisterParcel() {
                   <img
                     alt="Tracking QR"
                     className="h-full w-full"
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(`${typeof window !== "undefined" ? window.location.origin : ""}/track?q=${trackingNumber}`)}`}
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(getPublicTrackingUrl(trackingNumber))}`}
                   />
                 ) : (
                   <QrCode className="h-12 w-12 text-muted-foreground" />
@@ -671,9 +674,12 @@ function RegisterParcel() {
                     className="h-11 flex-1 rounded-xl sm:h-12"
                     style={{ background: "var(--tenant-primary)", color: "var(--tenant-primary-fg)" }}
                   >
-                    <Link to="/portal/track" search={trackingNumber ? { q: trackingNumber } : {}}>
-                      Track parcel
-                    </Link>
+                    <a href={getPublicTrackingUrl(trackingNumber)}>Track parcel</a>
+                  </Button>
+                  <Button asChild variant="outline" className="h-11 flex-1 rounded-xl sm:h-12">
+                    <a href={getTrackingWhatsAppUrl(trackingNumber, tenant.name)} target="_blank" rel="noreferrer">
+                      <MessageCircle className="mr-1.5 h-4 w-4" /> WhatsApp link
+                    </a>
                   </Button>
                   <Button asChild variant="outline" className="h-11 flex-1 rounded-xl sm:h-12">
                     <Link to="/portal">Done</Link>

@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
+import { CompanyAccessGate } from "@/components/company-access-gate";
+import { PortalShell } from "@/components/portal/portal-shell";
+import { PortalHome } from "@/routes/portal.index";
 import { useTenant } from "@/hooks/use-tenant";
 import { useTenantPwaManifest } from "@/hooks/use-tenant-pwa-manifest";
 import { resolveCompanyPublic } from "@/lib/api/tenant";
@@ -8,8 +11,8 @@ import { registerServiceWorker } from "@/lib/pwa";
 import type { TenantBranding } from "@/lib/tenant";
 
 /**
- * Customer entry from share link / QR / public website.
- * One permanent `/c/{slug}` — unlimited visitors; each person uses the same company site.
+ * Permanent company website. The share link stays `/c/{slug}` on refresh.
+ * Receivers open it in any browser — no app install required.
  */
 export const Route = createFileRoute("/c/$slug")({
   head: ({ params }) => ({
@@ -28,10 +31,10 @@ export const Route = createFileRoute("/c/$slug")({
 function CustomerTenantEntry() {
   const { slug } = Route.useParams();
   const { activateTenant, updateTenant } = useTenant();
-  const navigate = useNavigate();
   useTenantPwaManifest();
   const [company, setCompany] = useState<TenantBranding | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
     registerServiceWorker();
@@ -45,20 +48,21 @@ function CustomerTenantEntry() {
       if (cancelled) return;
 
       if (!remote) {
-        setError("This courier link is not valid. Ask the company for their official portal link.");
+        setError("This courier link is not valid. Ask the company for their official website link.");
+        setReady(true);
         return;
       }
 
       setCompany(remote);
       updateTenant(remote);
       await activateTenant(remote.slug);
-      document.title = `${remote.name} — Customer portal`;
-      void navigate({ to: "/portal", replace: true });
+      document.title = `${remote.name} — Send & track parcels`;
+      setReady(true);
     })();
     return () => {
       cancelled = true;
     };
-  }, [slug, activateTenant, navigate, updateTenant]);
+  }, [slug, activateTenant, updateTenant]);
 
   if (error) {
     return (
@@ -69,6 +73,16 @@ function CustomerTenantEntry() {
           <p className="font-mono text-xs text-muted-foreground">/c/{slug}</p>
         </div>
       </div>
+    );
+  }
+
+  if (ready && company && !error) {
+    return (
+      <CompanyAccessGate>
+        <PortalShell>
+          <PortalHome />
+        </PortalShell>
+      </CompanyAccessGate>
     );
   }
 

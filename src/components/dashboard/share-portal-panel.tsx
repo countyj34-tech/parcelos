@@ -11,6 +11,7 @@ import {
   getCustomerPortalUrl,
   getPublicAppOrigin,
   getWhatsAppShareUrl,
+  isPlaceholderTenant,
   isPublicShareOrigin,
   resolveCustomerPortalSlug,
   type TenantBranding,
@@ -23,11 +24,11 @@ function shareTenant(
   companySlug: string | null | undefined,
 ): TenantBranding {
   const name =
-    tenant.name && tenant.name !== "Swift Logistics" ? tenant.name : companyName || tenant.name;
+    tenant.name && !isPlaceholderTenant(tenant) ? tenant.name : companyName || tenant.name;
   const slug =
     resolveCustomerPortalSlug({
       slug: companySlug || tenant.slug,
-      name: name || companyName,
+      name: name ?? companyName ?? null,
     }) || tenant.slug;
   const domain =
     tenant.domain && !tenant.domain.startsWith("swiftlogistics.")

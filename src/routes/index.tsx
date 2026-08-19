@@ -4,7 +4,7 @@ import { FadeIn } from "@/components/motion/fade-in";
 import { SecretLogoTap } from "@/components/secret-logo-tap";
 import { Button } from "@/components/ui/button";
 import { PLATFORM_OWNER, PRODUCT_NAME } from "@/lib/brand";
-import { clearCustomerPortalMode } from "@/lib/portal-mode";
+import { clearCustomerPortalMode, getCustomerPortalSlug } from "@/lib/portal-mode";
 import { useAuth } from "@/hooks/use-auth";
 import { getHomeRouteForRole } from "@/lib/roles";
 import { useEffect } from "react";
@@ -47,7 +47,12 @@ function CompanyHome() {
       return;
     }
     if (isCustomer) {
-      void navigate({ to: "/portal", replace: true });
+      const slug = getCustomerPortalSlug();
+      if (slug) {
+        void navigate({ to: "/c/$slug", params: { slug }, replace: true });
+      } else {
+        void navigate({ to: "/portal", replace: true });
+      }
       return;
     }
     // Demo mode is always "authenticated" — only bounce real sessions into the desk

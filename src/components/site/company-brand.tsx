@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
-import { DEMO_TENANT } from "@/lib/tenant";
+import { PLATFORM_TENANT } from "@/lib/tenant";
 import { SecretLogoTap } from "@/components/secret-logo-tap";
 
 /** Company-branded mark for public-facing pages (owner's system, not platform SaaS). */
@@ -13,7 +13,7 @@ export function CompanyBrand({
   showTagline?: boolean;
   inverted?: boolean;
 }) {
-  const t = DEMO_TENANT;
+  const t = PLATFORM_TENANT;
   return (
     <div className={cn("flex items-center gap-3", className)}>
       <SecretLogoTap>
@@ -47,5 +47,5 @@ export function CompanyBrand({
 }
 
 export function CompanyMeta(page: string) {
-  return `${page} — ${DEMO_TENANT.name}`;
+  return `${page} — ${PLATFORM_TENANT.name}`;
 }

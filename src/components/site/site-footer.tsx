@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { CompanyBrand } from "@/components/site/company-brand";
-import { DEMO_TENANT } from "@/lib/tenant";
+import { PLATFORM_OWNER, PRODUCT_NAME } from "@/lib/brand";
 
 export function SiteFooter() {
   return (
@@ -20,23 +20,16 @@ export function SiteFooter() {
               >
                 Track a parcel
               </Link>
-              <Link
-                to="/portal"
-                className="rounded-full border border-border bg-card px-4 py-2 text-xs font-medium transition-colors hover:bg-muted"
-              >
-                Send a parcel
-              </Link>
             </div>
           </div>
           <div className="text-sm text-muted-foreground">
-            <p className="font-semibold text-foreground">Head office</p>
-            <p className="mt-1">{DEMO_TENANT.supportPhone}</p>
-            <p className="mt-1">{DEMO_TENANT.supportEmail}</p>
-            <p className="mt-4">Lusaka · Ndola · Kitwe · Nairobi</p>
+            <p className="font-semibold text-foreground">{PRODUCT_NAME}</p>
+            <p className="mt-1">Courier software — not a courier company.</p>
+            <p className="mt-1">{PLATFORM_OWNER}</p>
           </div>
         </div>
         <div className="mt-10 flex flex-col gap-2 border-t border-border pt-6 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-          <p>© 2026 {DEMO_TENANT.name}. All rights reserved.</p>
+          <p>© 2026 {PRODUCT_NAME}. All rights reserved.</p>
           <p>Privacy · Terms · Data protection</p>
         </div>
       </div>

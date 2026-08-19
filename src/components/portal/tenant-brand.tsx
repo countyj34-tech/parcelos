@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { Phone } from "lucide-react";
 import { useTenant } from "@/hooks/use-tenant";
 import { PLATFORM_OWNER } from "@/lib/brand";
+import { isPlaceholderTenant } from "@/lib/tenant";
 import { cn } from "@/lib/utils";
 import { SecretLogoTap } from "@/components/secret-logo-tap";
 
@@ -72,16 +73,18 @@ export function TenantHeader({
   transparent = false,
   wide = false,
   compact = false,
-  homeTo = "/portal",
+  homeTo,
 }: {
   minimal?: boolean;
   transparent?: boolean;
   wide?: boolean;
   compact?: boolean;
   /** Where brand name navigates — reception walk-in should stay on desk. */
-  homeTo?: "/portal" | "/app/reception" | "/app";
+  homeTo?: string;
 }) {
   const { tenant } = useTenant();
+  const companyHome =
+    homeTo ?? (tenant.slug && !isPlaceholderTenant(tenant) ? `/c/${tenant.slug}` : "/portal");
   const maxW = wide ? "max-w-6xl" : "max-w-lg lg:max-w-3xl";
 
   const headerClass = transparent
@@ -104,7 +107,7 @@ export function TenantHeader({
           </SecretLogoTap>
           <div className="min-w-0 text-left">
             <Link
-              to={homeTo}
+              to={companyHome}
               className={cn(
                 "block truncate font-display font-bold",
                 compact ? "text-base sm:text-lg" : "text-lg sm:text-xl",
